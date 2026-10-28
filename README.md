@@ -1,36 +1,71 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AciesDaily portal
 
-## Getting Started
+The separate AciesDaily portal for creatives, clients and staff. The public website lives beside it in `../studio`. Both use Next.js 16.4, React 19 and self-hosted Geist. The portal keeps the Acies ivory, slate and orange identity with a phone-first layout and bottom navigation for creatives and clients.
 
-First, run the development server:
+## Included
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- Phone-first registration, optional email, personal passwords, phone verification, recovery, revocable server sessions and account ownership checks.
+- Creative profiles with multiple crafts, private portfolio uploads, availability and unavailable dates, optional role-specific information, application review and separate publishing permission.
+- Private invitations with a proposed fee and terms, availability responses, staff booking confirmation, call details, coordinator instructions, work uploads and recorded payment status.
+- In-app notifications and private conversations with the team. Messages refresh while the conversation is open; SMS verification uses the configured provider. WhatsApp links prepare text but do not send it automatically.
+- Individual staff accounts, owner-only staff invitations, client invitations, enquiries, application reviews, production management, proposals, content publishing and an activity record.
+- Client accounts linked to their own projects, proposals, explicit approvals, updates and deliverables. Existing private project links still work without an account.
+- Actual image uploads: JPG/PNG/WebP files are checked, resized, stripped of metadata and saved as WebP. Project uploads can also be PDFs. Files are private unless explicitly published or shared as project deliverables.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The portal does not transfer money. Payment status is a staff-entered record, with a transaction reference required when marking a fee paid. No demo people, bookings or client work are inserted into normal application storage.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Local setup
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+From this directory:
 
-## Learn More
+    npm.cmd install
+    node scripts/setup-local.mjs
+    npm.cmd run dev
 
-To learn more about Next.js, take a look at the following resources:
+The portal serves at `http://127.0.0.1:3001`. Run `npm.cmd run dev` in `../studio` for the public website at `http://127.0.0.1:3000`. Use these loopback addresses consistently because origin checks use the configured origins.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Setup writes private `.env.local` files for both applications, a local owner account and `.data/owner-access.txt` containing the local owner login. It preserves existing credentials and copies legacy website enquiries/content without overwriting portal records or deleting website originals. Local owner provisioning is an explicit administrative bootstrap, not an SMS verification event.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Local phone verification is enabled only with `ACIES_OTP_MODE=local`, `ACIES_ALLOW_LOCAL_VERIFICATION=true` and loopback request/configured hosts. Codes go to private `.data/local-codes`, expire in five minutes, allow five attempts and are never returned by the API. The UI clearly identifies local preview delivery. No SMS is sent in this mode.
 
-## Deploy on Vercel
+Production builds:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+    npm.cmd run build
+    npm.cmd start
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Production configuration
+
+1. Set the final HTTPS `ACIES_PORTAL_URL` and `ACIES_SITE_URL`. Put the same random `ACIES_BRIDGE_SECRET` of at least 32 characters in the portal and website environments. Put a separate random `ACIES_VERIFICATION_SECRET` of at least 32 characters in the portal only.
+2. Set `ACIES_OTP_MODE=twilio` and `ACIES_ALLOW_LOCAL_VERIFICATION=false`. Configure `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and either `TWILIO_MESSAGING_SERVICE_SID` or `TWILIO_FROM_NUMBER`. Configure the sender and destination permissions with the provider and verify actual Ghana delivery before launch. Registration does not silently bypass verification when delivery is unavailable. See the [Twilio Messages API](https://www.twilio.com/docs/messaging/api/message-resource).
+3. Configure durable storage. A persistent single-process Node host can use `ACIES_STORAGE_DIRECTORY` on a private persistent disk. For serverless/multiple instances, run `database/schema.sql` and configure both Supabase variables plus a private `acies-private` storage bucket. The schema upgrades the old records table in place with a revision column and additional collections. The service-role key stays server-side; public website access is limited to published content and an authenticated enquiry-creation endpoint. See [Supabase Data API security](https://supabase.com/docs/guides/api/securing-your-api).
+4. Provision an owner using private environment variables `ACIES_OWNER_PHONE`, `ACIES_OWNER_NAME` and optionally `ACIES_OWNER_PASSWORD`, then run `node scripts/provision-owner.mjs`. Verify that the owner controls this number first. The script inserts an account without overwriting an existing identity and writes credentials to an ignored private file. Invite other staff through Account invitations.
+5. Migrate existing private records before switching live traffic. Local setup copies local files only. When switching to Supabase, explicitly import the existing JSON records into `acies_records` with their original collection, ID and data; preserve project access tokens and account IDs. Copy local upload objects to the private bucket with their existing storage keys. Do not switch storage adapters without transferring live data.
+6. Configure host-level request/body limits and rate limiting, monitoring, private backups and your final retention policy. Application authentication limits are persisted, but edge limits are still needed against traffic floods. Use a managed authentication provider if you need enterprise SSO or MFA; these are not included in this initial account system.
+
+The Supabase and Twilio integrations are implemented but have not been connected to live credentials or verified against a live account. Do not deploy the development owner credential file or local verification settings. Private data and secrets are excluded from Git and output tracing.
+
+## Ownership and access
+
+Creatives can read/edit their own profile, invitations, messages and files. Only confirmed/completed project assignments allow work uploads. A response to an invitation does not confirm a booking. Staff review applications and confirm bookings. Public publishing requires staff action and creative permission; withdrawing permission immediately hides a linked public profile and its images. Casting details, equipment notes, contact details and availability are not included in public profile output.
+
+Clients can read only projects explicitly linked to their accounts. Private links use random access tokens in URL fragments, sent to APIs as Authorization headers. A project reference alone cannot retrieve it. New proposal terms clear prior approval, and stale approvals are rejected. File links from private project pages are checked against the actual shared deliverables. Anyone holding a complete private project link can view and approve that project; share it only with the client. A compromised legacy link can be revoked by replacing its private record's `accessToken`.
+
+Phone changes and self-service account deletion are not included; contact AciesDaily for those requests. Acknowledgements and activity records support coordination and are not an electronic-signature service or accounting ledger.
+
+## Verification
+
+Build and lint both projects. The integration/browser scripts use isolated local records and refuse a preview without test mode. They do not send SMS or use a remote database.
+
+    node scripts/setup-qa.mjs
+    node scripts/preview-qa.mjs
+
+In another terminal, from this directory:
+
+    node scripts/preview-qa.mjs --site
+
+Then:
+
+    npm.cmd run test:api
+    npm.cmd run test:browser
+
+The API checks create isolated test accounts in `.data/qa-run`. Browser checks cover creative registration/review/invitation/booking/upload, staff actions, client approval, old-link migration, responsive sizes, light theme and reduced motion using installed Chrome or Edge. Reports and screenshots are in ignored `artifacts`. The public site's existing video/form/responsiveness checks can be run from `../studio` using `node scripts/verify-site.mjs --url=http://127.0.0.1:3002` while both QA previews are running. Stop QA previews before running the normal portal on port 3001.
