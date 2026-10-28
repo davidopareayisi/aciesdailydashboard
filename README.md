@@ -22,7 +22,7 @@ From this directory:
     node scripts/setup-local.mjs
     npm.cmd run dev
 
-The portal serves at `http://127.0.0.1:3001`. Run `npm.cmd run dev` in `../studio` for the public website at `http://127.0.0.1:3000`. Use these loopback addresses consistently because origin checks use the configured origins.
+The portal serves at `http://127.0.0.1:3001`; `http://localhost:3001` also works for local forms and login. Run `npm.cmd run dev` in `../studio` for the public website at `http://127.0.0.1:3000`. Local aliases must use the configured protocol and port. Production forms require the exact configured portal origin. Stay on one address after signing in because cookies belong to that hostname.
 
 Setup writes private `.env.local` files for both applications, a local owner account and `.data/owner-access.txt` containing the local owner login. It preserves existing credentials and copies legacy website enquiries/content without overwriting portal records or deleting website originals. Local owner provisioning is an explicit administrative bootstrap, not an SMS verification event.
 

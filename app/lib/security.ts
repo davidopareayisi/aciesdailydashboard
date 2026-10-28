@@ -3,6 +3,7 @@ import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } fr
 import { promisify } from "node:util";
 import { NextRequest, NextResponse } from "next/server";
 import { create, get, remove, update } from "./db";
+import { isPortalOrigin } from "./portal-origin.mjs";
 import type { Session, User, SafeUser } from "./types";
 const scrypt = promisify(scryptCallback), cookieName = "acies_portal";
 export class HttpError extends Error { constructor(message: string, public status = 400) { super(message); } }
@@ -14,7 +15,7 @@ export function safeUser(user: User): SafeUser { const { passwordHash: ignoredPa
 export async function passwordHash(password: string) { if (password.length < 12 || password.length > 128) throw new HttpError("Use a password with 12 to 128 characters."); const salt = randomBytes(16).toString("hex"); return `${salt}:${(await scrypt(password, salt, 64) as Buffer).toString("hex")}`; }
 export async function passwordMatches(password: string, encoded: string) { const [salt, expected] = encoded.split(":"); if (!salt || !expected || password.length > 128) return false; return equal((await scrypt(password, salt, 64) as Buffer).toString("hex"), expected); }
 export function json(data: unknown, status = 200) { return NextResponse.json(data, { status, headers: { "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex, nofollow", "Referrer-Policy": "no-referrer" } }); }
-export function sameOrigin(request: Request) { const origin = request.headers.get("origin"); if (!origin) return true; const requestUrl = new URL(request.url), host = request.headers.get("x-forwarded-host")?.split(",")[0].trim() || request.headers.get("host") || requestUrl.host; const protocol = request.headers.get("x-forwarded-proto")?.split(",")[0].trim() || requestUrl.protocol.slice(0, -1); return origin === (process.env.ACIES_PORTAL_URL ? new URL(process.env.ACIES_PORTAL_URL).origin : `${protocol}://${host}`); }
+export function sameOrigin(request: Request) { return isPortalOrigin(request, process.env.ACIES_PORTAL_URL); }
 export async function body(request: Request) {
   if (!sameOrigin(request)) throw new HttpError("Please use the AciesDaily portal.", 403);
   if (!request.headers.get("content-type")?.includes("application/json")) throw new HttpError("Send JSON data.", 415);
