@@ -5,6 +5,7 @@ import { create, get, list, save, update } from "./db";
 import { body, hash, HttpError, json, rateLimit, requireStaff, requireUser, strings, text } from "./security";
 import { notify, now } from "./domain";
 import { starterLessons } from "./learning-catalog.mjs";
+import { courseMetadata, learningCourses } from "./learning-courses.mjs";
 import { hostedVideo, youtubeId } from "./learning-video.mjs";
 import type { Audit, Media, User } from "./types";
 import type { LearningProgress, Lesson, PracticeAttempt, PracticeSubmission } from "./learning-types";
@@ -12,7 +13,8 @@ import type { LearningProgress, Lesson, PracticeAttempt, PracticeSubmission } fr
 export async function learningLessons() {
   const merged = new Map((starterLessons as unknown as Lesson[]).map(lesson => [lesson.id, lesson]));
   for (const lesson of await list<Lesson>("lessons")) merged.set(lesson.id, lesson);
-  return [...merged.values()].sort((a, b) => a.order - b.order || a.title.localeCompare(b.title));
+  const courseOrder = new Map(learningCourses.map(course => [course.id, course.order]));
+  return [...merged.values()].map(lesson => ({ ...lesson, ...courseMetadata(lesson) })).sort((a, b) => (courseOrder.get(a.courseId) || 1) - (courseOrder.get(b.courseId) || 1) || a.order - b.order || a.title.localeCompare(b.title));
 }
 function identifier(value: string | undefined) {
   if (!value || !/^[a-zA-Z0-9][a-zA-Z0-9-]{0,120}$/.test(value)) throw new HttpError("This lesson is unavailable.", 404);
@@ -27,7 +29,7 @@ export async function learningAction(request: NextRequest, path: string[]) {
   }
   if (user.role !== "creative") throw new HttpError("Learning is available to creative accounts.", 403);
   const lessons = (await learningLessons()).filter(lesson => lesson.published);
-  if (!path.length && request.method === "GET") return json({ lessons, progress: (await list<LearningProgress>("learningProgress")).filter(item => item.userId === user.id), submissions: (await list<PracticeSubmission>("learningSubmissions")).filter(item => item.userId === user.id) });
+  if (!path.length && request.method === "GET") return json({ courses: learningCourses.filter(course => lessons.some(lesson => lesson.courseId === course.id)), lessons, progress: (await list<LearningProgress>("learningProgress")).filter(item => item.userId === user.id), submissions: (await list<PracticeSubmission>("learningSubmissions")).filter(item => item.userId === user.id) });
   const id = identifier(path[0]), lesson = lessons.find(item => item.id === id);
   if (!lesson) throw new HttpError("This lesson is unavailable.", 404);
   const data = await body(request), recordId = `learn-${hash(`${user.id}:${id}`)}`;
@@ -66,7 +68,7 @@ export async function staffLearningAction(request: NextRequest, path: string[]) 
   const actor = await requireStaff(request);
   if (!path.length && request.method === "GET") {
     const users = new Map((await list<User>("users")).map(user => [user.id, user.name]));
-    return json({ lessons: await learningLessons(), submissions: (await list<PracticeSubmission>("learningSubmissions")).map(item => ({ ...item, learnerName: users.get(item.userId) || "Creative account" })).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) });
+    return json({ courses: learningCourses, lessons: await learningLessons(), submissions: (await list<PracticeSubmission>("learningSubmissions")).map(item => ({ ...item, learnerName: users.get(item.userId) || "Creative account" })).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) });
   }
   const data = await body(request);
   if (path[0] === "lessons" && request.method === "POST") {
@@ -76,10 +78,12 @@ export async function staffLearningAction(request: NextRequest, path: string[]) 
     if (videoId) videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
     let sourceUrl = text(data, "sourceUrl", 1000);
     if (sourceUrl) { try { const url = new URL(sourceUrl); if (url.protocol !== "https:" || url.username || url.password) throw new Error(); sourceUrl = url.href; } catch { throw new HttpError("Use a full HTTPS resource link."); } }
+    const courseId = text(data, "courseId", 120, true);
+    if (!learningCourses.some(course => course.id === courseId)) throw new HttpError("Choose a course from the learning library.");
     const creator = text(data, "creator", 160);
     if (videoUrl && !creator) throw new HttpError("Credit the video creator.");
     const order = Number(data.order); if (!Number.isInteger(order) || order < 1 || order > 999) throw new HttpError("Use a lesson order between 1 and 999.");
-    const lesson: Lesson = { id, title: text(data, "title", 160, true), category: text(data, "category", 100, true), summary: text(data, "summary", 500, true), notes: text(data, "notes", 8000, true), checklist: strings(data, "checklist", 8), practice: text(data, "practice", 1500), videoUrl, creator, sourceUrl, sourceTitle: text(data, "sourceTitle", 160), order, published: data.published === true, updatedAt: now() };
+    const lesson: Lesson = { id, courseId, title: text(data, "title", 160, true), category: text(data, "category", 100, true), summary: text(data, "summary", 500, true), notes: text(data, "notes", 8000, true), checklist: strings(data, "checklist", 8), practice: text(data, "practice", 1500), videoUrl, creator, sourceUrl, sourceTitle: text(data, "sourceTitle", 160), order, published: data.published === true, updatedAt: now() };
     await save("lessons", lesson); await create<Audit>("audit", { id: randomUUID(), actorId: actor.id, action: lesson.published ? "Published learning lesson" : "Saved learning draft", targetId: id, createdAt: now() });
     return json({ lesson });
   }

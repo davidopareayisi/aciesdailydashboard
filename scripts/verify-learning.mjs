@@ -22,8 +22,10 @@ async function upload(account, bytes, type, purpose = "learning") { const form =
 try {
   for (const [key, account] of [["owner", owner], ["learner", learner], ["other", other], ["client", client]]) assert.equal((await account.request("auth/login", "POST", credentials[key])).status, 200);
   assert.equal((await anonymous.request("learn")).status, 401); assert.equal((await client.request("learn")).status, 403); assert.equal((await learner.request("staff/learn")).status, 403);
-  const library = await learner.request("learn"); assert.equal(library.status, 200); assert.ok(library.data.lessons.length >= 12); assert.equal(library.data.lessons.filter(item => item.videoUrl).length, 4); assert.equal(library.data.lessons.filter(item => item.practice).length, 4);
-  pass("Creative library has 12 starter lessons, four videos and four assignments; client and staff APIs enforce roles");
+  const library = await learner.request("learn"); assert.equal(library.status, 200); assert.equal(library.data.lessons.length, 36); assert.equal(library.data.courses.length, 6); assert.equal(library.data.lessons.filter(item => item.videoUrl).length, 20); assert.equal(library.data.lessons.filter(item => item.practice).length, 12);
+  for (const course of library.data.courses) { const lessons = library.data.lessons.filter(lesson => lesson.courseId === course.id); assert.equal(lessons.length, 6); assert.deepEqual(lessons.map(lesson => lesson.order), [1,2,3,4,5,6]); }
+  assert.equal(new Set(library.data.lessons.filter(item => item.videoUrl).map(item => item.videoUrl)).size, 20);
+  pass("Six ordered courses contain 36 lessons, 20 distinct videos and 12 assignments; account roles remain enforced");
   for (const value of ["https://youtube.com.evil.invalid/watch?v=vxULs-R7Jl4", "javascript:alert(1)", "https://youtu.be/notvalid", "https://evil.invalid/embed/vxULs-R7Jl4"]) assert.equal(youtubeId(value), null);
   assert.equal(youtubeId("https://youtu.be/vxULs-R7Jl4"), "vxULs-R7Jl4"); assert.equal(hostedVideo("http://example.com/video.mp4"), null);
   pass("Video inputs accept supported sources and reject lookalike hosts or unsafe schemes");
@@ -34,7 +36,13 @@ try {
   assert.equal((await learner.request("learn")).data.lessons.some(item => item.id === lesson.id), true);
   assert.equal((await owner.request("staff/learn/lessons", "POST", { ...lesson, videoUrl: "https://evil.invalid/watch?v=vxULs-R7Jl4" })).status, 400);
   await owner.request("staff/learn/lessons", "POST", lesson);
-  pass("Staff drafts stay hidden, publishing works and invalid external video sources cannot be saved");
+  assert.equal((await owner.request("staff/learn/lessons", "POST", { ...lesson, courseId: "unknown-course" })).status, 400);
+  const original = library.data.lessons.find(item => item.id === "phone-digitals");
+  assert.equal((await owner.request("staff/learn/lessons", "POST", { ...original, published: false, notes: "Staff-edited draft that must not be replaced by the seeded catalogue." })).status, 200);
+  assert.equal((await learner.request("learn")).data.lessons.some(item => item.id === original.id), false);
+  assert.equal((await owner.request("staff/learn")).data.lessons.find(item => item.id === original.id).notes, "Staff-edited draft that must not be replaced by the seeded catalogue.");
+  await owner.request("staff/learn/lessons", "POST", original);
+  pass("Course assignment and drafts work, staff edits survive default merging and invalid sources are rejected");
   assert.equal((await learner.request("learn/start-here/progress", "PATCH", { completed: true }, { Origin: "https://evil.invalid" })).status, 403);
   assert.equal((await learner.request("learn/start-here/progress", "PATCH", { completed: "yes" })).status, 400);
   assert.equal((await learner.request("learn/start-here/progress", "PATCH", { completed: true })).status, 200);

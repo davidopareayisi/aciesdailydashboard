@@ -1,4 +1,6 @@
 // Original Acies lesson notes. External videos remain with their credited creators.
+import { expansionLessons } from './learning-expansion.mjs';
+import { courseMetadata } from './learning-courses.mjs';
 const created = '2026-10-28';
 const rows = [
   ['start-here', 'Find your starting point', 'Getting started', 'A practical introduction to commercial, lifestyle, beauty, editorial and runway work.',
@@ -42,7 +44,8 @@ const rows = [
     'Return to your reviewed assignments and choose one specific thing to practise next. Ask the team to explain any feedback you do not understand. You can submit another attempt with a short note explaining what changed.\n\nLesson completion and practice feedback are learning records. They do not confer professional accreditation or guarantee representation or work. Your public profile and its publishing permission are managed separately. If you want portfolio photographs published, upload and choose them in your profile rather than reusing private practice files.',
     ['Choose one practical improvement from your feedback.', 'Update your availability separately when it changes.', 'Ask the team about coaching or a suitable next casting.']],
 ];
-export const starterLessons = rows.map(([id, title, category, summary, notes, checklist, practice = '', videoId = '', creator = '', sourceUrl = '', sourceTitle = ''], order) => ({
+const originalLessons = rows.map(([id, title, category, summary, notes, checklist, practice = '', videoId = '', creator = '', sourceUrl = '', sourceTitle = ''], order) => ({
   id, title, category, summary, notes, checklist, practice, videoUrl: videoId ? `https://www.youtube.com/watch?v=${videoId}` : '', creator,
   sourceUrl, sourceTitle, order: order + 1, published: true, updatedAt: created,
 }));
+export const starterLessons = [...originalLessons.map(lesson => ({ ...lesson, ...courseMetadata(lesson) })), ...expansionLessons];
