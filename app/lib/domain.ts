@@ -34,7 +34,7 @@ export async function userAction(request: NextRequest, path: string[]) {
     if (user.role !== "creative") throw new HttpError("Creative profiles are for creative accounts.", 403);
     const data = await body(request), selectedCrafts = strings(data, "crafts").filter((craft) => crafts.includes(craft));
     const mediaIds = strings(data, "media", 12), avatar = text(data, "avatar", 120);
-    for (const id of [...mediaIds, ...(avatar ? [avatar] : [])]) { const media = await get<Media>("media", id); if (!media || media.userId !== user.id || !media.mime.startsWith("image/")) throw new HttpError("Choose an image from your own portfolio.", 403); }
+    for (const id of [...mediaIds, ...(avatar ? [avatar] : [])]) { const media = await get<Media>("media", id); if (!media || media.userId !== user.id || (!media.mime.startsWith("image/") || media.purpose === "learning")) throw new HttpError("Choose an image from your own portfolio.", 403); }
     const dates = strings(data, "unavailableDates", 90); if (dates.some((date) => !/^\d{4}-\d{2}-\d{2}$/.test(date))) throw new HttpError("Check your unavailable dates.");
     const availability = text(data, "availability"); if (!["Available", "Limited availability", "Unavailable"].includes(availability)) throw new HttpError("Choose your availability.");
     const old = await get<Profile>("creativeProfiles", user.id) || emptyProfile(user);

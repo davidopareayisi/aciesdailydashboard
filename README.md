@@ -43,6 +43,20 @@ The setup creates a private `.data/account-credentials.txt` file with the owner 
 
 The original local storage and optional Supabase adapter remain available when `DATABASE_URL` is empty. QA preview scripts explicitly clear `DATABASE_URL`, Supabase settings and SMS credentials. `npm.cmd run db:verify` checks the real configured Neon connection and the saved accounts using a local preview.
 
+## AciesDaily Learn
+
+Creative accounts have a mobile-first Learn area at `/learn`; staff manage it at `/team/learn`. The free model foundations programme starts with 12 lessons, four credited YouTube tutorials and four private photo/video assignments. Lesson completion and practice review are separate records and do not imply professional accreditation, profile approval or a guaranteed booking.
+
+Run `npm.cmd run learn:setup` once for an existing Neon installation. This transaction adds the three learning collections and inserts starter lessons without replacing existing lessons or business records. New installations also support the collections through `database/neon-schema.sql`. Local storage uses the same private adapter; Supabase installations should rerun their schema upgrade before enabling learning.
+
+Staff can add lessons, change their order, edit original notes/checklists/tasks, replace video links, save drafts and publish. Supported video sources are YouTube links or direct HTTPS MP4/WebM URLs for your own licensed training videos. YouTube's official privacy-enhanced player loads only after a learner chooses it; creator credit, YouTube terms, Google privacy links and a fallback watch link remain visible. An iframe-specific `strict-origin-when-cross-origin` referrer policy provides the referrer YouTube requires without sending private portal paths. External videos can carry ads, change or become unavailable. No video is downloaded, rehosted or represented as Acies-owned content.
+
+Practice images and short MP4/WebM clips are uploaded privately, up to 8 MB per file and four files per attempt. Photos receive the normal metadata-stripping/resizing treatment; videos receive container/type checks and retain their original bytes. Learning files are marked separately, cannot be attached to a public creative profile, and are excluded from public media access even if a content entry links to them. Other creatives, clients and anonymous visitors cannot access them. Staff feedback includes the reviewer's name, a concrete next step and a separate practice outcome. Earlier attempts remain available; only one awaiting-feedback attempt is allowed at a time, and stale staff reviews are rejected. Learners receive an in-app notice when feedback is ready. No SMS or email is sent.
+
+The starter sources are The Agency Arizona's [walk](https://www.youtube.com/watch?v=vxULs-R7Jl4) and [practice](https://www.youtube.com/watch?v=444j45QH3ns) tutorials, Fresh Pepper's [digitals tutorial](https://www.youtube.com/watch?v=4fAUaZS2TcE), and Brandon Andre's [digitals example](https://www.youtube.com/watch?v=wZwUdn3Ty2Y). YouTube metadata and embed availability were checked during setup. Acies notes are original; the referenced international resources are not Ghanaian legal templates or endorsements. Staff should review source suitability over time and replace material as needed.
+
+Start `node scripts/preview-learning.mjs` after a production build, then run `npm.cmd run test:learn` in another terminal. The API checks refuse a preview without test mode and reset only their dedicated learning QA records. `node scripts/verify-learning-browser.mjs` then checks the mobile learner/staff experience in installed Chrome or Edge. The preview disables Neon, Supabase and SMS; reports are written to ignored `artifacts`.
+
 ## Production configuration
 
 1. Set the final HTTPS `ACIES_PORTAL_URL` and `ACIES_SITE_URL`. Put the same random `ACIES_BRIDGE_SECRET` of at least 32 characters in the portal and website environments. Put a separate random `ACIES_VERIFICATION_SECRET` of at least 32 characters in the portal only.

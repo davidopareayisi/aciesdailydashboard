@@ -13,7 +13,7 @@ function encoded(password) { const salt = randomBytes(16).toString("hex"); retur
 function matches(password, encodedPassword) { const [salt, digest] = encodedPassword.split(":"); const actual = scryptSync(password, salt, 64); const expected = Buffer.from(digest, "hex"); return actual.length === expected.length && timingSafeEqual(actual, expected); }
 async function optionalJson(file) { try { return JSON.parse(await readFile(file, "utf8")); } catch (error) { if (error.code === "ENOENT") return null; throw error; } }
 async function insert(collection, record) { return postgresQuery("INSERT INTO acies_portal.records (collection, id, data) VALUES ($1, $2, $3::jsonb) ON CONFLICT (collection, id) DO NOTHING RETURNING id", [collection, record.id, JSON.stringify(record)]); }
-const sourceCollections = ["users", "creativeProfiles", "invitations", "notices", "messages", "media", "invites", "audit", "enquiries", "profiles", "work", "packages"];
+const sourceCollections = ["users", "creativeProfiles", "invitations", "notices", "messages", "media", "invites", "audit", "enquiries", "profiles", "work", "packages", "lessons", "learningProgress", "learningSubmissions"];
 try {
   if (!process.env.DATABASE_URL) throw new Error("Database is not configured.");
   await postgresQuery("SELECT 1 AS connected");
@@ -31,7 +31,7 @@ try {
   }
   const media = await postgresQuery("SELECT data FROM acies_portal.records WHERE collection = 'media'");
   for (const { data } of media) {
-    if (!/^[a-f0-9-]{36}\.(webp|pdf)$/.test(data.storageKey)) throw new Error("Invalid upload storage key.");
+    if (!/^[a-f0-9-]{36}\.(webp|pdf|mp4|webm)$/.test(data.storageKey)) throw new Error("Invalid upload storage key.");
     if ((await postgresQuery("SELECT 1 FROM acies_portal.files WHERE storage_key = $1", [data.storageKey])).length) continue;
     const bytes = await readFile(path.join(localRoot, "uploads", data.storageKey));
     await postgresQuery("INSERT INTO acies_portal.files (storage_key, bytes) VALUES ($1, decode($2, 'base64')) ON CONFLICT (storage_key) DO NOTHING", [data.storageKey, bytes.toString("base64")]); report.files++;

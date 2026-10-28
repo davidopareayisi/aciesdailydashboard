@@ -18,10 +18,14 @@ export async function upload(request: NextRequest) {
   for (;;) { const item = await reader.read(); if (item.done) break; size += item.value.length; if (size > 9 * 1024 * 1024) { await reader.cancel(); throw new HttpError("Choose a file smaller than 8 MB.", 413); } chunks.push(item.value); }
   const form = await new Response(Buffer.concat(chunks), { headers: { "Content-Type": request.headers.get("content-type") || "" } }).formData();
   const file = form.get("file"), projectId = String(form.get("projectId") || "");
+  const learning = form.get("purpose") === "learning";
+  if (learning && (user.role !== "creative" || projectId)) throw new HttpError("Practice uploads are for your own learning account.", 403);
   if (!(file instanceof File) || !file.size || file.size > 8 * 1024 * 1024) throw new HttpError("Choose a JPG, PNG, WebP or PDF smaller than 8 MB.");
   if (projectId) { const project = await get<Project>("enquiries", projectId); const assigned = user.role === "creative" && (await list<Invitation>("invitations")).some((item) => item.userId === user.id && item.projectId === projectId && ["Confirmed", "Completed"].includes(item.booking)); if (!project || (user.role !== "staff" && project.clientId !== user.id && !assigned)) throw new HttpError("You cannot upload to this project.", 403); }
   const input = Buffer.from(await file.arrayBuffer()), id = randomUUID(); let bytes: Buffer, mime: string, extension: string;
-  if (input.subarray(0, 5).toString() === "%PDF-" && projectId) { bytes = input; mime = "application/pdf"; extension = "pdf"; }
+  if (learning && file.type === "video/mp4" && input.length > 16 && input.subarray(4, 8).toString() === "ftyp") { bytes = input; mime = "video/mp4"; extension = "mp4"; }
+  else if (learning && file.type === "video/webm" && input.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3])) && input.subarray(0, 512).includes(Buffer.from("webm"))) { bytes = input; mime = "video/webm"; extension = "webm"; }
+  else if (input.subarray(0, 5).toString() === "%PDF-" && projectId) { bytes = input; mime = "application/pdf"; extension = "pdf"; }
   else {
     try { const processor = sharp(input, { limitInputPixels: 20_000_000, animated: false }); if (!["jpeg", "png", "webp"].includes((await processor.metadata()).format || "")) throw new Error("Unsupported image."); bytes = await processor.rotate().resize({ width: 1800, height: 1800, fit: "inside", withoutEnlargement: true }).webp({ quality: 82 }).toBuffer(); } catch { throw new HttpError("This image could not be opened. Use a JPG, PNG or WebP."); }
     mime = "image/webp"; extension = "webp";
@@ -30,7 +34,7 @@ export async function upload(request: NextRequest) {
   if (postgresEnabled()) await saveDatabaseFile(storageKey, bytes);
   else if (db) { const bucket = process.env.ACIES_MEDIA_BUCKET || "acies-private"; const response = await fetch(`${db.url}/storage/v1/object/${encodeURIComponent(bucket)}/${storageKey}`, { method: "POST", headers: { apikey: db.key, Authorization: `Bearer ${db.key}`, "Content-Type": mime, "x-upsert": "false" }, body: new Uint8Array(bytes) }); if (!response.ok) throw new HttpError("Your file could not be saved.", 503); }
   else { const directory = path.join(/* turbopackIgnore: true */ dataRoot(), "uploads"); await mkdir(directory, { recursive: true }); await writeFile(path.join(/* turbopackIgnore: true */ directory, storageKey), bytes, { flag: "wx", mode: 0o600 }); }
-  const media: Media = { id, userId: user.id, projectId, filename: mime === "image/webp" ? `${file.name.replace(/\.[^/.]+$/, "").slice(0, 150)}.webp` : file.name.slice(0, 160), mime, bytes: bytes.length, storageKey, createdAt: now() }; await create("media", media); return json({ media, url: `${process.env.ACIES_PORTAL_URL || request.nextUrl.origin}/api/media/${id}` }, 201);
+  const media: Media = { id, userId: user.id, projectId, filename: mime === "image/webp" ? `${file.name.replace(/\.[^/.]+$/, "").slice(0, 150)}.webp` : file.name.slice(0, 160), mime, bytes: bytes.length, storageKey, createdAt: now(), ...(learning ? { purpose: "learning" as const } : {}) }; await create("media", media); return json({ media, url: `${process.env.ACIES_PORTAL_URL || request.nextUrl.origin}/api/media/${id}` }, 201);
 }
 export async function download(request: NextRequest, id: string) {
   const media = await get<Media>("media", id); if (!media) throw new HttpError("File not found.", 404);
@@ -38,7 +42,7 @@ export async function download(request: NextRequest, id: string) {
   const projectId = request.headers.get("x-acies-project"), bearer = request.headers.get("authorization")?.replace(/^Bearer /, "") || "";
   if (!allowed && projectId && media.projectId === projectId && bearer.length >= 40 && bearer.length <= 100) { const project = await get<Project>("enquiries", projectId); allowed = Boolean(project?.accessToken && equal(bearer, project.accessToken) && project.deliverables?.some((item) => item.url.endsWith(`/api/media/${id}`))); }
   if (!allowed && media.projectId && user?.role === "client") { const project = await get<Project>("enquiries", media.projectId); allowed = project?.clientId === user.id && Boolean(project.deliverables?.some((item) => item.url.endsWith(`/api/media/${id}`))); }
-  if (!allowed && media.mime.startsWith("image/")) { const entries = [...await contentEntries("profiles", true), ...await contentEntries("work", true), ...await contentEntries("packages", true)]; allowed = entries.some((entry) => entry.image.endsWith(`/api/media/${id}`)); }
+  if (!allowed && media.purpose !== "learning" && media.mime.startsWith("image/")) { const entries = [...await contentEntries("profiles", true), ...await contentEntries("work", true), ...await contentEntries("packages", true)]; allowed = entries.some((entry) => entry.image.endsWith(`/api/media/${id}`)); }
   if (!allowed) throw new HttpError("File not found.", 404);
   let bytes: Uint8Array; const db = postgresEnabled() ? null : supabase();
   if (postgresEnabled()) bytes = await readDatabaseFile(media.storageKey);
