@@ -1,5 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
+import { postgresEnabled, saveDatabaseFile, readDatabaseFile } from "./postgres.mjs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
@@ -25,8 +26,9 @@ export async function upload(request: NextRequest) {
     try { const processor = sharp(input, { limitInputPixels: 20_000_000, animated: false }); if (!["jpeg", "png", "webp"].includes((await processor.metadata()).format || "")) throw new Error("Unsupported image."); bytes = await processor.rotate().resize({ width: 1800, height: 1800, fit: "inside", withoutEnlargement: true }).webp({ quality: 82 }).toBuffer(); } catch { throw new HttpError("This image could not be opened. Use a JPG, PNG or WebP."); }
     mime = "image/webp"; extension = "webp";
   }
-  const storageKey = `${id}.${extension}`, db = supabase();
-  if (db) { const bucket = process.env.ACIES_MEDIA_BUCKET || "acies-private"; const response = await fetch(`${db.url}/storage/v1/object/${encodeURIComponent(bucket)}/${storageKey}`, { method: "POST", headers: { apikey: db.key, Authorization: `Bearer ${db.key}`, "Content-Type": mime, "x-upsert": "false" }, body: new Uint8Array(bytes) }); if (!response.ok) throw new HttpError("Your file could not be saved.", 503); }
+  const storageKey = `${id}.${extension}`, db = postgresEnabled() ? null : supabase();
+  if (postgresEnabled()) await saveDatabaseFile(storageKey, bytes);
+  else if (db) { const bucket = process.env.ACIES_MEDIA_BUCKET || "acies-private"; const response = await fetch(`${db.url}/storage/v1/object/${encodeURIComponent(bucket)}/${storageKey}`, { method: "POST", headers: { apikey: db.key, Authorization: `Bearer ${db.key}`, "Content-Type": mime, "x-upsert": "false" }, body: new Uint8Array(bytes) }); if (!response.ok) throw new HttpError("Your file could not be saved.", 503); }
   else { const directory = path.join(/* turbopackIgnore: true */ dataRoot(), "uploads"); await mkdir(directory, { recursive: true }); await writeFile(path.join(/* turbopackIgnore: true */ directory, storageKey), bytes, { flag: "wx", mode: 0o600 }); }
   const media: Media = { id, userId: user.id, projectId, filename: mime === "image/webp" ? `${file.name.replace(/\.[^/.]+$/, "").slice(0, 150)}.webp` : file.name.slice(0, 160), mime, bytes: bytes.length, storageKey, createdAt: now() }; await create("media", media); return json({ media, url: `${process.env.ACIES_PORTAL_URL || request.nextUrl.origin}/api/media/${id}` }, 201);
 }
@@ -38,8 +40,9 @@ export async function download(request: NextRequest, id: string) {
   if (!allowed && media.projectId && user?.role === "client") { const project = await get<Project>("enquiries", media.projectId); allowed = project?.clientId === user.id && Boolean(project.deliverables?.some((item) => item.url.endsWith(`/api/media/${id}`))); }
   if (!allowed && media.mime.startsWith("image/")) { const entries = [...await contentEntries("profiles", true), ...await contentEntries("work", true), ...await contentEntries("packages", true)]; allowed = entries.some((entry) => entry.image.endsWith(`/api/media/${id}`)); }
   if (!allowed) throw new HttpError("File not found.", 404);
-  let bytes: Uint8Array; const db = supabase();
-  if (db) { const response = await fetch(`${db.url}/storage/v1/object/authenticated/${encodeURIComponent(process.env.ACIES_MEDIA_BUCKET || "acies-private")}/${media.storageKey}`, { headers: { Authorization: `Bearer ${db.key}`, apikey: db.key }, cache: "no-store" }); if (!response.ok) throw new HttpError("File unavailable.", 503); bytes = new Uint8Array(await response.arrayBuffer()); }
+  let bytes: Uint8Array; const db = postgresEnabled() ? null : supabase();
+  if (postgresEnabled()) bytes = await readDatabaseFile(media.storageKey);
+  else if (db) { const response = await fetch(`${db.url}/storage/v1/object/authenticated/${encodeURIComponent(process.env.ACIES_MEDIA_BUCKET || "acies-private")}/${media.storageKey}`, { headers: { Authorization: `Bearer ${db.key}`, apikey: db.key }, cache: "no-store" }); if (!response.ok) throw new HttpError("File unavailable.", 503); bytes = new Uint8Array(await response.arrayBuffer()); }
   else bytes = new Uint8Array(await readFile(path.join(/* turbopackIgnore: true */ dataRoot(), "uploads", media.storageKey)));
   return new Response(Uint8Array.from(bytes).buffer, { headers: { "Content-Type": media.mime, "Content-Length": String(bytes.length), "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox", "Content-Disposition": `${media.mime === "application/pdf" ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(media.filename)}` } });
 }

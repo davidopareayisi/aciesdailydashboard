@@ -14,7 +14,7 @@ export async function contentEntries(collection: Collection, publicOnly = false)
   const entries: PublishedEntry[] = [];
   for (const entry of merged.values()) {
     if (publicOnly && !entry.published) continue;
-    if (publicOnly && entry.userId) { const profile = await get<Profile>("creativeProfiles", entry.userId); if (!profile?.publishConsent || profile.status !== "Approved") continue; }
+    if (publicOnly && entry.userId) { const profile = await get<Profile>("creativeProfiles", entry.userId); if (!profile?.publishConsent || profile.status !== "Approved" || (await get<User>("users", entry.userId))?.demo) continue; }
     entries.push(entry);
   } return entries;
 }

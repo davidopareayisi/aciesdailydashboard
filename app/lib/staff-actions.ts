@@ -35,6 +35,7 @@ export async function staffAction(request: NextRequest, path: string[]) {
   }
   if (action === "publish-profile" && request.method === "POST") {
     const profile = await get<Profile>("creativeProfiles", text(data, "userId", 120, true)); if (!profile || profile.status !== "Approved" || !profile.publishConsent) throw new HttpError("Publishing requires an approved profile and the creative's permission.");
+    const account = await get<User>("users", profile.id); if (account?.demo) throw new HttpError("Demo profiles stay private and cannot be published on the website.");
     const imageId = profile.avatar || profile.media[0], origin = process.env.ACIES_PORTAL_URL || request.nextUrl.origin;
     const entry: PublishedEntry = { id: profile.id, userId: profile.id, title: profile.name, category: profile.crafts[0], location: profile.city, summary: profile.bio.slice(0, 500), details: profile.bio, image: imageId ? `${origin}/api/media/${imageId}` : "", imageAlt: imageId ? `Portfolio photograph shared by ${profile.name}` : "", items: profile.crafts, credits: "", published: true, updatedAt: now() };
     await save("profiles", entry); await audit(actor.id, "Published creative profile", profile.id); return json({ entry });

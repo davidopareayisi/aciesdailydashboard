@@ -16,7 +16,7 @@ export async function authAction(request: NextRequest, action: string) {
     await rateLimit(`login:${ip}:${phone}`, 12, 900_000);
     const password = text(data, "password", 128, true), user = phone ? await get<User>("users", userId(phone)) : null;
     const matches = await passwordMatches(password, user?.passwordHash || `${"0".repeat(32)}:${"0".repeat(128)}`);
-    if (!user || !matches || user.disabled) throw new HttpError("Your phone number or password wasn't recognised.", 401);
+    if (!user || !matches || user.disabled || (user.demo && process.env.ACIES_ALLOW_DEMO_ACCOUNTS !== "true")) throw new HttpError("Your phone number or password wasn't recognised.", 401);
     return session(request, user);
   }
   if (action === "register") {

@@ -12,7 +12,7 @@ The separate AciesDaily portal for creatives, clients and staff. The public webs
 - Client accounts linked to their own projects, proposals, explicit approvals, updates and deliverables. Existing private project links still work without an account.
 - Actual image uploads: JPG/PNG/WebP files are checked, resized, stripped of metadata and saved as WebP. Project uploads can also be PDFs. Files are private unless explicitly published or shared as project deliverables.
 
-The portal does not transfer money. Payment status is a staff-entered record, with a transaction reference required when marking a fee paid. No demo people, bookings or client work are inserted into normal application storage.
+The portal does not transfer money. Payment status is a staff-entered record, with a transaction reference required when marking a fee paid. No demo bookings or client work are created. Labelled demo accounts are provisioned only by the explicit Neon setup and stay private.
 
 ## Local setup
 
@@ -33,11 +33,21 @@ Production builds:
     npm.cmd run build
     npm.cmd start
 
+## Neon PostgreSQL
+
+Set the server-only `DATABASE_URL` in `.env.local` and run `npm.cmd run db:setup`. The connection uses [Neon’s official HTTP driver](https://neon.com/docs/serverless/serverless-driver) with parameterised SQL. It is never copied into the public website or browser bundle.
+
+Neon stores portal records, account password hashes, sessions and private upload bytes in the private `acies_portal` schema. The setup is additive: local business records and uploads are copied without overwriting existing database rows. QA records and transient local sessions/challenges are not imported. File access still goes through the portal’s ownership and publication checks.
+
+The setup creates a private `.data/account-credentials.txt` file with the owner login and role-specific demo logins. Demo numbers use the [reserved fictional 555-0100–0199 range](https://www.nanpa.com/numbering/555-line-numbers), never receive verification messages and cannot publish public profiles. Demo logins work only with `ACIES_ALLOW_DEMO_ACCOUNTS=true`; leave this off on a public deployment. Existing credentials and records are preserved on repeated setup runs.
+
+The original local storage and optional Supabase adapter remain available when `DATABASE_URL` is empty. QA preview scripts explicitly clear `DATABASE_URL`, Supabase settings and SMS credentials. `npm.cmd run db:verify` checks the real configured Neon connection and the saved accounts using a local preview.
+
 ## Production configuration
 
 1. Set the final HTTPS `ACIES_PORTAL_URL` and `ACIES_SITE_URL`. Put the same random `ACIES_BRIDGE_SECRET` of at least 32 characters in the portal and website environments. Put a separate random `ACIES_VERIFICATION_SECRET` of at least 32 characters in the portal only.
 2. Set `ACIES_OTP_MODE=twilio` and `ACIES_ALLOW_LOCAL_VERIFICATION=false`. Configure `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and either `TWILIO_MESSAGING_SERVICE_SID` or `TWILIO_FROM_NUMBER`. Configure the sender and destination permissions with the provider and verify actual Ghana delivery before launch. Registration does not silently bypass verification when delivery is unavailable. See the [Twilio Messages API](https://www.twilio.com/docs/messaging/api/message-resource).
-3. Configure durable storage. A persistent single-process Node host can use `ACIES_STORAGE_DIRECTORY` on a private persistent disk. For serverless/multiple instances, run `database/schema.sql` and configure both Supabase variables plus a private `acies-private` storage bucket. The schema upgrades the old records table in place with a revision column and additional collections. The service-role key stays server-side; public website access is limited to published content and an authenticated enquiry-creation endpoint. See [Supabase Data API security](https://supabase.com/docs/guides/api/securing-your-api).
+3. For Neon, set `DATABASE_URL`, run `database/neon-schema.sql` through `npm.cmd run db:setup`, and configure real accounts before launch. Records and private uploads are durable in PostgreSQL. Do not enable demo logins publicly. Alternatively, a persistent single-process Node host can use `ACIES_STORAGE_DIRECTORY` on a private persistent disk. For serverless/multiple instances, run `database/schema.sql` and configure both Supabase variables plus a private `acies-private` storage bucket. The schema upgrades the old records table in place with a revision column and additional collections. The service-role key stays server-side; public website access is limited to published content and an authenticated enquiry-creation endpoint. See [Supabase Data API security](https://supabase.com/docs/guides/api/securing-your-api).
 4. Provision an owner using private environment variables `ACIES_OWNER_PHONE`, `ACIES_OWNER_NAME` and optionally `ACIES_OWNER_PASSWORD`, then run `node scripts/provision-owner.mjs`. Verify that the owner controls this number first. The script inserts an account without overwriting an existing identity and writes credentials to an ignored private file. Invite other staff through Account invitations.
 5. Migrate existing private records before switching live traffic. Local setup copies local files only. When switching to Supabase, explicitly import the existing JSON records into `acies_records` with their original collection, ID and data; preserve project access tokens and account IDs. Copy local upload objects to the private bucket with their existing storage keys. Do not switch storage adapters without transferring live data.
 6. Configure host-level request/body limits and rate limiting, monitoring, private backups and your final retention policy. Application authentication limits are persisted, but edge limits are still needed against traffic floods. Use a managed authentication provider if you need enterprise SSO or MFA; these are not included in this initial account system.

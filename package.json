@@ -8,9 +8,12 @@
     "start": "next start --port 3001",
     "lint": "eslint",
     "test:api": "node scripts/verify-portal.mjs",
-    "test:browser": "node scripts/verify-browser.mjs"
+    "test:browser": "node scripts/verify-browser.mjs",
+    "db:setup": "node scripts/setup-neon.mjs",
+    "db:verify": "node scripts/verify-neon.mjs"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.2.0",
     "next": "16.4.3",
     "react": "19.3.0",
     "react-dom": "19.3.0",

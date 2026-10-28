@@ -13,6 +13,7 @@ export function localVerification(request: Request) {
   return process.env.ACIES_OTP_MODE === "local" && process.env.ACIES_ALLOW_LOCAL_VERIFICATION === "true" && ["localhost", "127.0.0.1", "::1"].includes(host) && ["localhost", "127.0.0.1", "::1"].includes(configured);
 }
 export async function sendCode(request: Request, user: User | null, purpose: "verify" | "reset", phone: string) {
+  if (user?.demo) throw new HttpError("Demo accounts do not receive verification messages. Ask the workspace owner for their saved login.");
   await rateLimit(`sms:${phone}`, 5, 3600_000); await rateLimit(`sms-cooldown:${phone}`, 1, 30_000);
   const id = `code-${token().replaceAll("_", "-")}`;
   if (!user) return { challengeId: id, localPreview: localVerification(request) };

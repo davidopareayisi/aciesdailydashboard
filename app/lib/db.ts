@@ -2,6 +2,7 @@ import "server-only";
 import { mkdir, readFile, readdir, rename, writeFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { postgresEnabled, postgresQuery } from "./postgres.mjs";
 export const buckets = ["users", "sessions", "creativeProfiles", "invitations", "notices", "messages", "media", "challenges", "invites", "audit", "enquiries", "profiles", "work", "packages", "limits"] as const;
 export type Bucket = typeof buckets[number];
 type Row<T> = { data: T; revision: number };
@@ -16,12 +17,14 @@ export async function databaseFetch(query: string, init?: RequestInit) {
 }
 async function row<T>(bucket: Bucket, id: string): Promise<Row<T> | null> {
   filename(bucket, id);
+  if (postgresEnabled()) { const rows = await postgresQuery("SELECT data, revision FROM acies_portal.records WHERE collection = $1 AND id = $2", [bucket, id]); return (rows[0] as Row<T>) || null; }
   if (supabase()) { const response = await databaseFetch(`?collection=eq.${bucket}&id=eq.${encodeURIComponent(id)}&select=data,revision`); return (await response.json())[0] || null; }
   try { return { data: JSON.parse(await readFile(filename(bucket, id), "utf8")), revision: 0 }; }
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return null; throw error; }
 }
 export async function get<T>(bucket: Bucket, id: string): Promise<T | null> { return (await row<T>(bucket, id))?.data || null; }
 export async function list<T>(bucket: Bucket): Promise<T[]> {
+  if (postgresEnabled()) { const rows = await postgresQuery("SELECT data FROM acies_portal.records WHERE collection = $1 ORDER BY id", [bucket]); return rows.map((entry: { data: T }) => entry.data); }
   if (supabase()) {
     const result: T[] = []; let offset = 0;
     for (;;) {
@@ -36,6 +39,11 @@ export async function list<T>(bucket: Bucket): Promise<T[]> {
   return Promise.all(files.filter((file) => /^[a-zA-Z0-9-]+\.json$/.test(file)).map(async (file) => JSON.parse(await readFile(path.join(dir, file), "utf8")) as T));
 }
 async function write<T extends { id: string }>(bucket: Bucket, data: T, create = false) {
+  filename(bucket, data.id);
+  if (postgresEnabled()) {
+    const conflict = create ? "" : " ON CONFLICT (collection, id) DO UPDATE SET data = EXCLUDED.data, revision = acies_portal.records.revision + 1, updated_at = now()";
+    await postgresQuery(`INSERT INTO acies_portal.records (collection, id, data) VALUES ($1, $2, $3::jsonb)${conflict}`, [bucket, data.id, JSON.stringify(data)]); return;
+  }
   if (supabase()) { await databaseFetch(create ? "" : "?on_conflict=collection,id", { method: "POST", headers: { Prefer: create ? "return=minimal" : "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ collection: bucket, id: data.id, data, revision: 1 }) }); return; }
   const target = filename(bucket, data.id); await mkdir(path.dirname(target), { recursive: true });
   if (create) { await writeFile(target, JSON.stringify(data), { flag: "wx", mode: 0o600 }); return; }
@@ -43,13 +51,19 @@ async function write<T extends { id: string }>(bucket: Bucket, data: T, create =
 }
 export async function create<T extends { id: string }>(bucket: Bucket, data: T) { await write(bucket, data, true); return data; }
 export async function save<T extends { id: string }>(bucket: Bucket, data: T) { await write(bucket, data); return data; }
-export async function remove(bucket: Bucket, id: string) { if (supabase()) { await databaseFetch(`?collection=eq.${bucket}&id=eq.${encodeURIComponent(id)}`, { method: "DELETE" }); return; } await unlink(filename(bucket, id)).catch((error) => { if (error.code !== "ENOENT") throw error; }); }
+export async function remove(bucket: Bucket, id: string) {
+  filename(bucket, id);
+  if (postgresEnabled()) { await postgresQuery("DELETE FROM acies_portal.records WHERE collection = $1 AND id = $2", [bucket, id]); return; }
+  if (supabase()) { await databaseFetch(`?collection=eq.${bucket}&id=eq.${encodeURIComponent(id)}`, { method: "DELETE" }); return; }
+  await unlink(filename(bucket, id)).catch((error) => { if (error.code !== "ENOENT") throw error; });
+}
 export async function update<T extends { id: string }>(bucket: Bucket, id: string, change: (record: T) => T | Promise<T>): Promise<T> {
   const key = `${bucket}:${id}`, previous = queues.get(key) || Promise.resolve();
   const work = previous.catch(() => {}).then(async () => {
     for (let attempt = 0; attempt < 4; attempt++) {
       const current = await row<T>(bucket, id); if (!current) throw new Error("Record not found.");
       const next = await change(current.data); if (next.id !== id) throw new Error("Record identity cannot change.");
+      if (postgresEnabled()) { const rows = await postgresQuery("UPDATE acies_portal.records SET data = $1::jsonb, revision = revision + 1, updated_at = now() WHERE collection = $2 AND id = $3 AND revision = $4 RETURNING revision", [JSON.stringify(next), bucket, id, current.revision]); if (rows.length) return next; continue; }
       if (!supabase()) { await write(bucket, next); return next; }
       const response = await databaseFetch(`?collection=eq.${bucket}&id=eq.${encodeURIComponent(id)}&revision=eq.${current.revision}`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ data: next, revision: current.revision + 1, updated_at: new Date().toISOString() }) });
       if ((await response.json()).length) return next;
