@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
-import { create, get, list, save, update } from "./db";
+import { create, find, get, list, save, update } from "./db";
 import { body, HttpError, json, requireUser, safeUser, strings, text, url } from "./security";
 import { crafts, type Invitation, type Media, type Message, type Notice, type Profile, type User } from "./types";
 import { projectView, type Project, type PublishedEntry } from "./models";
@@ -25,9 +25,9 @@ export async function unpublishProfile(id: string) {
 export async function userAction(request: NextRequest, path: string[]) {
   const user = await requireUser(request), action = path[0];
   if (action === "feed" && request.method === "GET") {
-    const invitations = user.role === "creative" ? (await list<Invitation>("invitations")).filter((item) => item.userId === user.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)) : [];
-    const notices = (await list<Notice>("notices")).filter((item) => item.userId === user.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 50);
-    const projects = user.role === "client" ? (await list<Project>("enquiries")).filter((project) => project.kind === "project" && project.clientId === user.id).map(projectView) : [];
+    const invitations = user.role === "creative" ? (await find<Invitation>("invitations", "userId", user.id)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)) : [];
+    const notices = (await find<Notice>("notices", "userId", user.id)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 50);
+    const projects = user.role === "client" ? (await find<Project>("enquiries", "clientId", user.id)).filter(project => project.kind === "project").map(projectView) : [];
     return json({ user: safeUser(user), profile: user.role === "creative" ? await get<Profile>("creativeProfiles", user.id) || emptyProfile(user) : null, invitations, notices, projects });
   }
   if (action === "profile" && request.method === "PATCH") {
@@ -61,7 +61,7 @@ export async function userAction(request: NextRequest, path: string[]) {
     await notify(user.id, result.response === "Accepted" ? "Availability received" : "Invitation declined", result.response === "Accepted" ? "Your coordinator will confirm the booking separately. Your response is not a confirmed booking." : "Thanks for letting the team know.", "/bookings"); return json({ invitation: result });
   }
   if (action === "messages") {
-    const messages = (await list<Message>("messages")).filter((message) => message.recipientId === user.id);
+    const messages = (await find<Message>("messages", "recipientId", user.id));
     if (request.method === "GET") return json({ messages: messages.sort((a, b) => a.createdAt.localeCompare(b.createdAt)) });
     if (request.method === "POST") { const data = await body(request); const message = await create<Message>("messages", { id: randomUUID(), threadId: `dm-${user.id}`, userId: user.id, senderName: user.name, senderRole: user.role, recipientId: user.id, body: text(data, "message", 3000, true), createdAt: now() }); return json({ message }, 201); }
   }

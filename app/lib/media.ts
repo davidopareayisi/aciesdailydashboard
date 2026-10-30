@@ -5,23 +5,24 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import type { NextRequest } from "next/server";
-import { create, dataRoot, get, list, supabase } from "./db";
+import { create, dataRoot, find, get, supabase } from "./db";
 import { contentEntries, now } from "./domain";
 import { equal, HttpError, json, rateLimit, requireUser, sameOrigin, currentUser } from "./security";
 import type { Invitation, Media } from "./types";
 import type { Project } from "./models";
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_REQUEST_BYTES } from "./upload-limits.mjs";
 
 export async function upload(request: NextRequest) {
   if (!sameOrigin(request)) throw new HttpError("Please upload from this portal.", 403);
   const user = await requireUser(request); await rateLimit(`upload:${user.id}`, 30, 600_000);
   const reader = request.body?.getReader(); if (!reader) throw new HttpError("Choose a file."); const chunks: Uint8Array[] = []; let size = 0;
-  for (;;) { const item = await reader.read(); if (item.done) break; size += item.value.length; if (size > 9 * 1024 * 1024) { await reader.cancel(); throw new HttpError("Choose a file smaller than 8 MB.", 413); } chunks.push(item.value); }
+  for (;;) { const item = await reader.read(); if (item.done) break; size += item.value.length; if (size > MAX_UPLOAD_REQUEST_BYTES) { await reader.cancel(); throw new HttpError("Choose a file smaller than 4 MB.", 413); } chunks.push(item.value); }
   const form = await new Response(Buffer.concat(chunks), { headers: { "Content-Type": request.headers.get("content-type") || "" } }).formData();
   const file = form.get("file"), projectId = String(form.get("projectId") || "");
   const learning = form.get("purpose") === "learning";
   if (learning && (user.role !== "creative" || projectId)) throw new HttpError("Practice uploads are for your own learning account.", 403);
-  if (!(file instanceof File) || !file.size || file.size > 8 * 1024 * 1024) throw new HttpError("Choose a JPG, PNG, WebP or PDF smaller than 8 MB.");
-  if (projectId) { const project = await get<Project>("enquiries", projectId); const assigned = user.role === "creative" && (await list<Invitation>("invitations")).some((item) => item.userId === user.id && item.projectId === projectId && ["Confirmed", "Completed"].includes(item.booking)); if (!project || (user.role !== "staff" && project.clientId !== user.id && !assigned)) throw new HttpError("You cannot upload to this project.", 403); }
+  if (!(file instanceof File) || !file.size || file.size > MAX_UPLOAD_BYTES) throw new HttpError("Choose a supported file smaller than 4 MB.");
+  if (projectId) { const project = await get<Project>("enquiries", projectId); const assigned = user.role === "creative" && (await find<Invitation>("invitations", "userId", user.id)).some((item) => item.projectId === projectId && ["Confirmed", "Completed"].includes(item.booking)); if (!project || (user.role !== "staff" && project.clientId !== user.id && !assigned)) throw new HttpError("You cannot upload to this project.", 403); }
   const input = Buffer.from(await file.arrayBuffer()), id = randomUUID(); let bytes: Buffer, mime: string, extension: string;
   if (learning && file.type === "video/mp4" && input.length > 16 && input.subarray(4, 8).toString() === "ftyp") { bytes = input; mime = "video/mp4"; extension = "mp4"; }
   else if (learning && file.type === "video/webm" && input.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3])) && input.subarray(0, 512).includes(Buffer.from("webm"))) { bytes = input; mime = "video/webm"; extension = "webm"; }

@@ -21,6 +21,7 @@ export type Enquiry = {
   status?: EnquiryStatus; coordinator?: string; shootDate?: string; proposal?: string;
   quote?: string; clientMessage?: string; internalNotes?: string; deliverables?: { label: string; url: string }[];
   accessToken?: string; approvedAt?: string;
+  milestones?: Partial<Record<EnquiryStatus, string>>;
 };
 
 export const packageDefaults: ContentEntry[] = [

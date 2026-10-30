@@ -137,7 +137,7 @@ try {
   await owner.request("staff/content/work", "POST", { ...content, published: true }); assert.ok((await anonymous.request("content/work")).data.entries.some((item) => item.id === content.id));
   await owner.request("staff/content/work", "POST", content); assert.equal((await anonymous.request("content/work")).data.entries.some((item) => item.id === content.id), false);
   const publicContent = await fetch(`${website}/api/content/profiles`); assert.ok((await publicContent.json()).entries.some((item) => item.id === a.id));
-  assert.equal((await fetch(`${website}/api/admin/enquiries`)).status, 404);
+  assert.equal((await fetch(`${website}/api/admin/enquiries`)).status, 410);
   const portalRedirect = await fetch(`${website}/portal?path=register`, { redirect: "manual" }); assert.equal(portalRedirect.headers.get("location"), `${base}/register`);
   pass("Portal publishing reaches the public website; drafts and old website management endpoints stay private");
 
@@ -157,6 +157,40 @@ try {
   assert.equal((await other.request("auth/login", "POST", { phone: bPhone, password })).status, 401);
   assert.equal((await other.request("auth/login", "POST", { phone: bPhone, password: resetPassword })).status, 200);
   pass("Phone-verified password recovery invalidates old sessions and the previous password");
+
+  assert.equal((await fetch(`${base}/api/staff/operations`)).status, 401);
+  assert.equal((await creative.request("staff/operations")).status, 403);
+  assert.equal((await owner.request("staff/operations")).status, 200);
+  assert.equal((await staff.request("staff/accounts")).status, 403);
+  assert.equal((await owner.request("staff/accounts")).status, 200);
+  assert.equal((await owner.request(`staff/accounts/${login.data.user.id}`, "PATCH", { disabled: true })).status, 403);
+  const staleSession = other.cookie();
+  assert.equal((await owner.request(`staff/accounts/${b.id}`, "PATCH", { disabled: true })).status, 200);
+  assert.equal((await fetch(`${base}/api/portal/feed`, { headers: { Cookie: staleSession } })).status, 401);
+  assert.equal((await owner.request(`staff/accounts/${b.id}`, "PATCH", { disabled: false })).status, 200);
+  assert.equal((await other.request("auth/login", "POST", { phone: bPhone, password: resetPassword })).status, 200);
+  pass("Staff operations are role protected; owner account controls revoke access and preserve records");
+
+  const oldProjectToken = new URL(receipt.projectUrl).hash.slice(8);
+  assert.equal((await creative.request(`staff/rotate-project-link/${projectId}`, "POST", {})).status, 403);
+  const rotated = await owner.request(`staff/rotate-project-link/${projectId}`, "POST", {});
+  assert.equal(rotated.status, 200);
+  assert.notEqual(rotated.data.entry.accessToken, oldProjectToken);
+  assert.equal((await fetch(`${base}/api/projects/${projectId}`, { headers: { Authorization: `Bearer ${oldProjectToken}` } })).status, 404);
+  receipt.projectUrl = `${base}/projects/${projectId}#access=${rotated.data.entry.accessToken}`;
+  assert.equal((await fetch(`${base}/api/projects/${projectId}`, { headers: { Authorization: `Bearer ${rotated.data.entry.accessToken}` } })).status, 200);
+  pass("Private project link replacement is staff-only and immediately revokes the previous token");
+
+  const tooLarge = await upload(creative, new Uint8Array(4_000_001), "oversized.png");
+  assert.equal(tooLarge.status, 400);
+  assert.match(tooLarge.data.error, /4 MB/);
+  assert.equal((await fetch(`${website}/robots.txt`)).status, 200);
+  const sitemap = await fetch(`${website}/sitemap.xml`); assert.equal(sitemap.status, 200);
+  const sitemapText = await sitemap.text(); assert.ok(sitemapText.includes("/packages/product-shoot")); assert.equal(sitemapText.includes("#access="), false);
+  const packagePage = await fetch(`${website}/packages/product-shoot`); assert.equal(packagePage.status, 200); assert.match(await packagePage.text(), /Product shoot/);
+  const missingPage = await fetch(`${website}/work/missing-entry-qa`);
+  assert.ok(missingPage.status === 404 || (missingPage.status === 200 && (await missingPage.text()).includes("noindex")));
+  pass("Upload limits, public sitemap, server-rendered details and missing-entry privacy behave correctly");
 
   for (const file of await readdir(".next/static", { recursive: true })) { if (!file.endsWith(".js")) continue; const source = await readFile(path.join(".next/static", file), "utf8"); assert.equal(source.includes(ownerPassword), false); }
   await mkdir("artifacts", { recursive: true });

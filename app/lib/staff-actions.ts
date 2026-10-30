@@ -1,3 +1,4 @@
+import { bookingConflicts, operationsSummary } from "./operations.mjs";
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { create, get, list, save, update } from "./db";
@@ -12,6 +13,14 @@ async function audit(actorId: string, action: string, targetId: string) { await 
 export async function staffAction(request: NextRequest, path: string[]) {
   const actor = await requireStaff(request), action = path[0];
   if (request.method === "GET") {
+    if (action === "accounts") {
+      if (!actor.owner) throw new HttpError("Only the owner manages account access.", 403);
+      return json({ accounts: (await list<User>("users")).map(({ id, name, phone, role, owner, disabled }) => ({ id, name, phone, role, owner, disabled })) });
+    }
+    if (action === "operations") {
+      const [projects, profiles, invitations] = await Promise.all([list<Project>("enquiries"), list<Profile>("creativeProfiles"), list<Invitation>("invitations")]);
+      return json(operationsSummary(projects, profiles, invitations));
+    }
     if (action === "overview") {
       const projects = await list<Project>("enquiries"), people = await list<Profile>("creativeProfiles"), invitations = await list<Invitation>("invitations");
       return json({ projects: projects.sort((a, b) => b.createdAt.localeCompare(a.createdAt)), people, invitations, clients: (await list<User>("users")).filter((user) => user.role === "client").map(safeUser), audit: (await list<Audit>("audit")).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 30) });
@@ -24,6 +33,22 @@ export async function staffAction(request: NextRequest, path: string[]) {
     if (action === "media") { const id = request.nextUrl.searchParams.get("project"); return json({ media: (await list<Media>("media")).filter((item) => id ? item.projectId === id : true) }); }
   }
   const data = await body(request);
+  if (action === "accounts" && request.method === "PATCH") {
+    if (!actor.owner) throw new HttpError("Only the owner manages account access.", 403);
+    if (typeof data.disabled !== "boolean") throw new HttpError("Choose whether the account is disabled.");
+    const disabled = data.disabled;
+    const account = await update<User>("users", path[1], current => {
+      if (current.owner || current.id === actor.id) throw new HttpError("Owner accounts are protected.", 403);
+      return { ...current, disabled, authVersion: current.authVersion + 1 };
+    });
+    await audit(actor.id, disabled ? "Disabled account access" : "Restored account access", account.id);
+    return json({ saved: true });
+  }
+  if (action === "rotate-project-link" && request.method === "POST") {
+    const project = await update<Project>("enquiries", path[1], current => { if (current.kind !== "project") throw new HttpError("Project not found.", 404); return { ...current, accessToken: token(), updatedAt: now() }; });
+    await audit(actor.id, "Replaced private project link", project.id);
+    return json({ entry: project });
+  }
   if (action === "people" && request.method === "PATCH") {
     const id = path[1], status = text(data, "status"), note = text(data, "reviewNote", 1500);
     if (!["Approved", "Changes requested", "Declined"].includes(status)) throw new HttpError("Choose a review decision.");
@@ -50,7 +75,7 @@ export async function staffAction(request: NextRequest, path: string[]) {
     const deliverables = data.deliverables.map((item: Record<string, unknown>) => ({ label: text(item, "label", 160, true), url: url(text(item, "url", 2000, true)) }));
     const clientId = text(data, "clientId", 120);
     if (clientId) { const client = await get<User>("users", clientId); if (!client || client.role !== "client") throw new HttpError("Choose a client account."); }
-    const result = await update<Project>("enquiries", id, (current) => ({ ...current, ...fields, status: data.status as Project["status"], clientId: clientId || current.clientId, deliverables, accessToken: current.kind === "project" ? current.accessToken || token() : undefined, approvedAt: fields.proposal !== (current.proposal || "") || fields.quote !== (current.quote || "") ? undefined : current.approvedAt, updatedAt: now() }));
+    const result = await update<Project>("enquiries", id, (current) => ({ ...current, ...fields, milestones: { ...current.milestones, ...(current.status !== data.status && !current.milestones?.[data.status as NonNullable<Project["status"]>] ? { [String(data.status)]: now() } : {}) }, status: data.status as Project["status"], clientId: clientId || current.clientId, deliverables, accessToken: current.kind === "project" ? current.accessToken || token() : undefined, approvedAt: fields.proposal !== (current.proposal || "") || fields.quote !== (current.quote || "") ? undefined : current.approvedAt, updatedAt: now() }));
     await audit(actor.id, "Updated project", id); if (result.clientId) await notify(result.clientId, "An update on your production", result.clientMessage || "Your project has been updated. Open it to review the latest details.", `/projects/account/${id}`);
     return json({ entry: result });
   }
@@ -68,6 +93,16 @@ export async function staffAction(request: NextRequest, path: string[]) {
     const booking = text(data, "booking"), payment = text(data, "payment"), paymentReference = text(data, "paymentReference", 160);
     if (!["Unconfirmed", "Confirmed", "Completed", "Cancelled"].includes(booking) || !["Not due", "Pending", "Paid"].includes(payment)) throw new HttpError("Choose a valid booking and payment status.");
     if (payment === "Paid" && !paymentReference) throw new HttpError("Record a payment reference before marking it paid.");
+    const override = text(data, "conflictOverrideReason", 500);
+    if (booking === "Confirmed") {
+      const pending = await get<Invitation>("invitations", path[1]);
+      if (!pending) throw new HttpError("Invitation not found.", 404);
+      if (pending.booking !== "Confirmed") {
+        const reasons = bookingConflicts(pending, await get<Profile>("creativeProfiles", pending.userId), await list<Invitation>("invitations"));
+        if (reasons.length && override.length < 15) throw new HttpError(reasons.join(" ") + " Resolve the conflict or record an override reason of at least 15 characters.", 409);
+        if (reasons.length) await audit(actor.id, "Scheduling override: " + override, pending.id);
+      }
+    }
     const result = await update<Invitation>("invitations", path[1], (current) => { if (["Confirmed", "Completed"].includes(booking) && current.response !== "Accepted") throw new HttpError("The creative must accept the invitation before booking confirmation."); return { ...current, booking: booking as Invitation["booking"], payment: payment as Invitation["payment"], paymentReference, callTime: text(data, "callTime", 160), coordinator: text(data, "coordinator", 160), preparation: text(data, "preparation", 3000), updatedAt: now() }; });
     await audit(actor.id, `Booking ${booking}; payment ${payment}`, result.id); await notify(result.userId, `Booking ${booking.toLowerCase()}`, `${result.title}. Open your booking for the latest shoot and payment details.`, `/bookings/${result.id}`); return json({ invitation: result });
   }

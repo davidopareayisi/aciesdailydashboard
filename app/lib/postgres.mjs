@@ -1,8 +1,14 @@
 // Server entrypoints and maintenance scripts only. Never import into client components.
 import { neon } from "@neondatabase/serverless";
 let client;
+export class StorageConfigurationError extends Error { constructor(code) { super("Portal storage configuration needs attention."); this.code = code; } }
 export function postgresEnabled() { return Boolean(process.env.DATABASE_URL); }
-export function postgresClient() { if (!process.env.DATABASE_URL) throw new Error("Database connection is not configured."); return client ??= neon(process.env.DATABASE_URL); }
+export function postgresClient() {
+  if (!process.env.DATABASE_URL) throw new StorageConfigurationError("DATABASE_URL_MISSING");
+  try { const url = new URL(process.env.DATABASE_URL); if (!["postgres:", "postgresql:"].includes(url.protocol) || !url.hostname || !url.username || !url.password || url.pathname.length < 2) throw new Error(); }
+  catch { throw new StorageConfigurationError("DATABASE_URL_INVALID"); }
+  return client ??= neon(process.env.DATABASE_URL);
+}
 /** @param {string} statement @param {unknown[]} values */
 export async function postgresQuery(statement, values = []) { return postgresClient().query(statement, values, { fetchOptions: { cache: "no-store" } }); }
 /** @param {string} key @param {Uint8Array} bytes */

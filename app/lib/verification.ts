@@ -5,6 +5,7 @@ import path from "node:path";
 import { create, dataRoot, get, remove, update } from "./db";
 import { equal, hash, HttpError, rateLimit, token } from "./security";
 import type { Challenge, User } from "./types";
+import { sendMnotifyCode } from "./mnotify.mjs";
 
 function pepper() { const value = process.env.ACIES_VERIFICATION_SECRET; if (!value || value.length < 32) throw new HttpError("Phone verification needs to be configured.", 503); return value; }
 export function localVerification(request: Request) {
@@ -26,6 +27,12 @@ export async function sendCode(request: Request, user: User | null, purpose: "ve
       await writeFile(path.join(directory, `${id}.txt`), `Local preview only\nPhone: ${phone}\nPurpose: ${purpose}\nCode: ${code}\nExpires in five minutes. No SMS was sent.\n`, { mode: 0o600 });
       return { challengeId: id, localPreview: true };
     }
+    const mode = process.env.ACIES_OTP_MODE || "twilio";
+    if (mode === "mnotify") {
+      await sendMnotifyCode(phone, code, purpose);
+      return { challengeId: id, localPreview: false };
+    }
+    if (mode !== "twilio") throw new Error("SMS provider is not configured.");
     const sid = process.env.TWILIO_ACCOUNT_SID, auth = process.env.TWILIO_AUTH_TOKEN, from = process.env.TWILIO_FROM_NUMBER, service = process.env.TWILIO_MESSAGING_SERVICE_SID;
     if (!sid || !auth || (!from && !service)) throw new Error("SMS is not configured.");
     const form = new URLSearchParams({ To: phone, Body: `Your AciesDaily verification code is ${code}. It expires in 5 minutes. Do not share this code.` });

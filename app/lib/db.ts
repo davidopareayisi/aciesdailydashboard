@@ -2,28 +2,39 @@ import "server-only";
 import { mkdir, readFile, readdir, rename, writeFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { postgresEnabled, postgresQuery } from "./postgres.mjs";
+import { postgresEnabled, postgresQuery, StorageConfigurationError } from "./postgres.mjs";
 export const buckets = ["users", "sessions", "creativeProfiles", "invitations", "notices", "messages", "media", "challenges", "invites", "audit", "enquiries", "profiles", "work", "packages", "limits", "lessons", "learningProgress", "learningSubmissions"] as const;
 export type Bucket = typeof buckets[number];
 type Row<T> = { data: T; revision: number };
 const queues = new Map<string, Promise<unknown>>();
 export function dataRoot() { return process.env.ACIES_STORAGE_DIRECTORY || path.join(process.cwd(), ".data"); }
 function filename(bucket: Bucket, id: string) { if (!/^[a-zA-Z0-9][a-zA-Z0-9-]{0,120}$/.test(id)) throw new Error("Invalid record."); return path.join(/* turbopackIgnore: true */ dataRoot(), bucket, `${id}.json`); }
-export function supabase() { const url = process.env.ACIES_SUPABASE_URL, key = process.env.ACIES_SUPABASE_SERVICE_ROLE_KEY; if (Boolean(url) !== Boolean(key)) throw new Error("Both database settings are required."); return url && key ? { url: url.replace(/\/$/, ""), key } : null; }
+export function supabase() { const url = process.env.ACIES_SUPABASE_URL, key = process.env.ACIES_SUPABASE_SERVICE_ROLE_KEY; if (Boolean(url) !== Boolean(key)) throw new StorageConfigurationError("SUPABASE_CONFIGURATION_INVALID"); return url && key ? { url: url.replace(/\/$/, ""), key } : null; }
 export async function databaseFetch(query: string, init?: RequestInit) {
   const db = supabase()!;
   const response = await fetch(`${db.url}/rest/v1/acies_records${query}`, { ...init, cache: "no-store", headers: { apikey: db.key, Authorization: `Bearer ${db.key}`, "Content-Type": "application/json", ...init?.headers } });
   if (!response.ok) throw new Error(response.status === 409 ? "Record already exists." : "Database unavailable."); return response;
 }
+function requireDurableStorage() { if (process.env.VERCEL === "1" && !postgresEnabled() && !supabase()) throw new StorageConfigurationError("DATABASE_URL_MISSING"); }
 async function row<T>(bucket: Bucket, id: string): Promise<Row<T> | null> {
-  filename(bucket, id);
+  filename(bucket, id); requireDurableStorage();
   if (postgresEnabled()) { const rows = await postgresQuery("SELECT data, revision FROM acies_portal.records WHERE collection = $1 AND id = $2", [bucket, id]); return (rows[0] as Row<T>) || null; }
   if (supabase()) { const response = await databaseFetch(`?collection=eq.${bucket}&id=eq.${encodeURIComponent(id)}&select=data,revision`); return (await response.json())[0] || null; }
   try { return { data: JSON.parse(await readFile(filename(bucket, id), "utf8")), revision: 0 }; }
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return null; throw error; }
 }
 export async function get<T>(bucket: Bucket, id: string): Promise<T | null> { return (await row<T>(bucket, id))?.data || null; }
+export async function find<T>(bucket: Bucket, field: "userId" | "clientId" | "recipientId" | "projectId" | "role", value: string): Promise<T[]> {
+  requireDurableStorage();
+  if (postgresEnabled()) {
+    const rows = await postgresQuery("SELECT data FROM acies_portal.records WHERE collection = $1 AND data ->> $2 = $3 ORDER BY id", [bucket, field, value]);
+    return rows.map((entry: { data: T }) => entry.data);
+  }
+  // Existing local/Supabase adapters preserve their pagination and access behavior.
+  return (await list<T>(bucket)).filter(entry => String((entry as Record<string, unknown>)[field] ?? "") === value);
+}
 export async function list<T>(bucket: Bucket): Promise<T[]> {
+  requireDurableStorage();
   if (postgresEnabled()) { const rows = await postgresQuery("SELECT data FROM acies_portal.records WHERE collection = $1 ORDER BY id", [bucket]); return rows.map((entry: { data: T }) => entry.data); }
   if (supabase()) {
     const result: T[] = []; let offset = 0;
@@ -39,7 +50,7 @@ export async function list<T>(bucket: Bucket): Promise<T[]> {
   return Promise.all(files.filter((file) => /^[a-zA-Z0-9-]+\.json$/.test(file)).map(async (file) => JSON.parse(await readFile(path.join(dir, file), "utf8")) as T));
 }
 async function write<T extends { id: string }>(bucket: Bucket, data: T, create = false) {
-  filename(bucket, data.id);
+  filename(bucket, data.id); requireDurableStorage();
   if (postgresEnabled()) {
     const conflict = create ? "" : " ON CONFLICT (collection, id) DO UPDATE SET data = EXCLUDED.data, revision = acies_portal.records.revision + 1, updated_at = now()";
     await postgresQuery(`INSERT INTO acies_portal.records (collection, id, data) VALUES ($1, $2, $3::jsonb)${conflict}`, [bucket, data.id, JSON.stringify(data)]); return;
@@ -52,6 +63,7 @@ async function write<T extends { id: string }>(bucket: Bucket, data: T, create =
 export async function create<T extends { id: string }>(bucket: Bucket, data: T) { await write(bucket, data, true); return data; }
 export async function save<T extends { id: string }>(bucket: Bucket, data: T) { await write(bucket, data); return data; }
 export async function remove(bucket: Bucket, id: string) {
+  requireDurableStorage();
   filename(bucket, id);
   if (postgresEnabled()) { await postgresQuery("DELETE FROM acies_portal.records WHERE collection = $1 AND id = $2", [bucket, id]); return; }
   if (supabase()) { await databaseFetch(`?collection=eq.${bucket}&id=eq.${encodeURIComponent(id)}`, { method: "DELETE" }); return; }

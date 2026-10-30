@@ -1,7 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
-import { create, get, list, save, update } from "./db";
+import { create, find, get, list, save, update } from "./db";
 import { body, hash, HttpError, json, rateLimit, requireStaff, requireUser, strings, text } from "./security";
 import { notify, now } from "./domain";
 import { starterLessons } from "./learning-catalog.mjs";
@@ -29,7 +29,7 @@ export async function learningAction(request: NextRequest, path: string[]) {
   }
   if (user.role !== "creative") throw new HttpError("Learning is available to creative accounts.", 403);
   const lessons = (await learningLessons()).filter(lesson => lesson.published);
-  if (!path.length && request.method === "GET") return json({ courses: learningCourses.filter(course => lessons.some(lesson => lesson.courseId === course.id)), lessons, progress: (await list<LearningProgress>("learningProgress")).filter(item => item.userId === user.id), submissions: (await list<PracticeSubmission>("learningSubmissions")).filter(item => item.userId === user.id) });
+  if (!path.length && request.method === "GET") return json({ courses: learningCourses.filter(course => lessons.some(lesson => lesson.courseId === course.id)), lessons, progress: (await find<LearningProgress>("learningProgress", "userId", user.id)), submissions: (await find<PracticeSubmission>("learningSubmissions", "userId", user.id)) });
   const id = identifier(path[0]), lesson = lessons.find(item => item.id === id);
   if (!lesson) throw new HttpError("This lesson is unavailable.", 404);
   const data = await body(request), recordId = `learn-${hash(`${user.id}:${id}`)}`;

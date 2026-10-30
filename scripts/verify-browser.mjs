@@ -4,12 +4,18 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile, readdir, mkdir } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { resetLocalTestLimits } from "./qa-fixtures.mjs";
+import { normalizeQaMediaOrigins, resetLocalTestLimits } from "./qa-fixtures.mjs";
 
-const base = "http://127.0.0.1:3001", site = "http://127.0.0.1:3002", port = 9341;
+const base = process.env.ACIES_TEST_PORTAL_URL || "http://127.0.0.1:3001", site = process.env.ACIES_TEST_SITE_URL || "http://127.0.0.1:3002", port = 9341;
 assert.equal((await (await fetch(`${base}/api/auth/session`)).json()).testMode, true, "Use the isolated QA preview.");
 await resetLocalTestLimits();
+await normalizeQaMediaOrigins(base);
 const accounts = JSON.parse(await readFile(".data/qa-run/test-accounts.json", "utf8"));
+assert.match(accounts.projectId, /^AD-[A-F0-9]{8,32}$/);
+const projectFixture = path.resolve(".data/qa-run/enquiries", `${accounts.projectId}.json`);
+const projectRecord = JSON.parse(await readFile(projectFixture, "utf8"));
+delete projectRecord.approvedAt;
+await writeFile(projectFixture, JSON.stringify(projectRecord), { mode: 0o600 });
 const executable = [process.env.CHROME_PATH, "C:/Program Files/Google/Chrome/Application/chrome.exe", "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"].find((file) => file && existsSync(file));
 assert.ok(executable, "Chrome or Edge is required for browser verification.");
 await mkdir("artifacts", { recursive: true });
@@ -28,7 +34,7 @@ async function resize(width, height = 900) { await cdp("Emulation.setDeviceMetri
 async function screenshot(name, full = true) { await evaluate("document.fonts.ready.then(() => true)"); await evaluate("window.scrollTo(0,0)"); const metrics = await evaluate("({width:innerWidth,height:document.documentElement.scrollHeight})"); const response = await cdp("Page.captureScreenshot", full ? { format: "png", captureBeyondViewport: true, clip: { x: 0, y: 0, width: metrics.width, height: metrics.height, scale: 1 } } : { format: "png", captureBeyondViewport: false }); await writeFile(`artifacts/${name}.png`, Buffer.from(response.data, "base64")); }
 async function uploadFile(selector) { const document = await cdp("DOM.getDocument"); const node = await cdp("DOM.querySelector", { nodeId: document.root.nodeId, selector }); await cdp("DOM.setFileInputFiles", { nodeId: node.nodeId, files: [fixture] }); }
 async function login(account, selector = ".home-greeting") { await navigate("/login", ".auth-form-wrap"); await fill(".auth-form-wrap [name=phone]", account.phone); await fill(".auth-form-wrap [name=password]", account.password); await click(".auth-form-wrap form > button"); await waitFor(`document.querySelector(${JSON.stringify(selector)})`); }
-async function logoutMember() { await navigate("/profile", ".account-links"); await click(".account-links button"); await waitFor("document.querySelector('.auth-form-wrap')"); }
+async function logoutMember() { await navigate("/profile", ".account-links"); await waitFor("Array.from(document.images).every(image => image.complete)"); await click(".account-links button"); await waitFor("document.querySelector('.auth-form-wrap')"); }
 async function logoutStaff() { await click(".app-header button[aria-label='Sign out']"); await waitFor("document.querySelector('.auth-form-wrap')"); }
 function pass(name) { checks.push(name); console.log(`PASS ${name}`); }
 try {
@@ -56,8 +62,11 @@ try {
   pass("Short profile sections save portfolio uploads, publishing permission, unavailable dates and a review application");
 
   await resize(1440, 1000); await login(accounts.owner, ".overview-counts"); await screenshot("staff-overview-desktop");
+  await navigate("/team/operations", ".staff-overview-grid"); await resize(390); await screenshot("staff-operations-mobile"); await resize(320);
+  await navigate("/team/access", ".surface"); await waitFor("document.body.innerText.includes('Account access.')"); await screenshot("owner-account-access-mobile"); await resize(1440, 1000);
+  pass("Follow-up metrics and owner account controls render at mobile and desktop widths");
   await navigate("/team/people", ".staff-filters"); await waitFor("document.querySelectorAll('.person-card').length >= 3"); await fill(".staff-filters input[type=search]", name); await waitFor("document.querySelectorAll('.person-card').length === 1"); await click(".person-card"); await waitFor("document.querySelector('.review-panel')");
-  await fill(".review-panel textarea", "Synthetic browser approval of the completed local test profile."); await clickText(".review-actions button", "Approve application"); await waitFor("document.querySelector('.staff-editor-grid .status').textContent === 'Approved'"); await clickText(".publishing-note button", "Publish on the website"); await waitFor("document.querySelector('.publishing-note .success-notice')"); await screenshot("staff-creative-review");
+  await fill(".review-panel textarea", "Synthetic browser approval of the completed local test profile."); await clickText(".review-actions button", "Approve application"); await waitFor("document.querySelector('.staff-editor-grid .status').textContent === 'Approved'"); await waitFor("!document.querySelector('.publishing-note button').disabled"); await clickText(".publishing-note button", "Publish on the website"); await waitFor("document.querySelector('.publishing-note .success-notice')"); await screenshot("staff-creative-review");
   pass("Staff can review, approve and publish a consenting creative through the interface");
 
   await navigate("/team/productions", ".staff-detail-heading"); await clickText(".staff-detail-heading button", "Invite a creative"); await waitFor("document.querySelector('select[name=projectId]')"); await fill("[name=projectId]", accounts.projectId);
