@@ -252,6 +252,10 @@ img { max-width:100%; }
 .loading-panels>span { display:block; height:130px; background:#eeece5; border-radius:14px; animation:breathe 1s ease-in-out infinite alternate; }
 @keyframes breathe { from { opacity:.5; } to { opacity:1; } }
 .staff-app .app-header { padding-inline:32px; }
+@media (min-width:761px) {
+  .staff-app .app-header { position:sticky; top:0; z-index:50; }
+  .staff-sidebar { position:sticky; top:82px; align-self:start; height:calc(100dvh - 82px); overflow-y:auto; }
+}
 .staff-layout { display:grid; grid-template-columns:230px minmax(0,1fr); min-height:calc(100dvh - 82px); }
 .staff-sidebar { border-right:1px solid var(--line); padding:40px 22px; }
 .staff-sidebar nav { display:grid; gap:7px; margin:28px 0 40px; }
