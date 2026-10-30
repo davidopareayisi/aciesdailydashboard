@@ -4,6 +4,7 @@ import { list } from "./db";
 import { postgresEnabled } from "./postgres.mjs";
 import { json } from "./security";
 import { requireBridge } from "./enquiry-intake";
+import { mediaStorageMode, r2Storage } from "./r2.mjs";
 
 export function safeFailureCode(error: unknown) {
   const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
@@ -20,7 +21,9 @@ export async function connectionStatus(request: Request) {
   try {
     // Exercise the same schema and adapter that published content uses.
     await list("packages");
-    return json({ ready: true, storage: postgresEnabled() ? "postgres" : "other", intakeVersion: 2 });
+    const mediaStorage = mediaStorageMode();
+    if (mediaStorage === "r2") await r2Storage().check();
+    return json({ ready: true, storage: postgresEnabled() ? "postgres" : "other", mediaStorage, intakeVersion: 2 });
   } catch (error) {
     const requestId = randomUUID(), code = safeFailureCode(error);
     console.error(JSON.stringify({ event: "portal_connection_failed", requestId, code }));

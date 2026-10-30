@@ -17,4 +17,5 @@ jobs:
       - run: npm run lint
       - run: npm run test:launch
       - run: npm run test:sms
+      - run: npm run test:r2
       - run: npm run build

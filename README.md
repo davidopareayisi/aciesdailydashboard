@@ -37,7 +37,7 @@ Production builds:
 
 Set the server-only `DATABASE_URL` in `.env.local` and run `npm.cmd run db:setup`. The connection uses [Neon’s official HTTP driver](https://neon.com/docs/serverless/serverless-driver) with parameterised SQL. It is never copied into the public website or browser bundle.
 
-Neon stores portal records, account password hashes, sessions and private upload bytes in the private `acies_portal` schema. The setup is additive: local business records and uploads are copied without overwriting existing database rows. QA records and transient local sessions/challenges are not imported. File access still goes through the portal’s ownership and publication checks.
+Neon stores portal records, account password hashes and sessions in the private `acies_portal` schema. When database media storage is selected, it also stores private upload bytes; R2 can hold new files while existing database files remain readable. The setup is additive: local business records and uploads are copied without overwriting existing database rows. QA records and transient local sessions/challenges are not imported. File access still goes through the portal’s ownership and publication checks.
 
 The setup creates a private `.data/account-credentials.txt` file with the owner login and role-specific demo logins. Demo numbers use the [reserved fictional 555-0100–0199 range](https://www.nanpa.com/numbering/555-line-numbers), never receive verification messages and cannot publish public profiles. Demo logins work only with `ACIES_ALLOW_DEMO_ACCOUNTS=true`; leave this off on a public deployment. Existing credentials and records are preserved on repeated setup runs.
 
@@ -101,3 +101,7 @@ The API checks create isolated test accounts in `.data/qa-run`. Browser checks c
 ## SMS transport verification
 
 Run `npm.cmd run test:sms` for offline mNotify request/response checks. Requests are mocked; no provider is contacted, no SMS is sent and no database records are changed. The tests cover verification and reset payloads, provider rejections (including HTTP 200 errors), invalid JSON, network failures and missing configuration.
+
+## Cloudflare R2
+
+Private R2 storage is optional for new uploads; Neon remains the record store and existing Neon files remain readable. See [R2 setup and verification](docs/cloudflare-r2.md). Run `npm run test:r2` for offline checks and `npm run storage:verify -- --roundtrip` for a private bucket test after setting credentials. The 4 MB function upload limit remains.

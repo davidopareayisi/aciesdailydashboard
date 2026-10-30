@@ -16,7 +16,7 @@ for (const [url, options, expected] of checks.filter(([url]) => !process.argv.in
   catch { ready = false; console.log(JSON.stringify({ url, reachable: false })); }
 }
 if (process.env.ACIES_BRIDGE_SECRET) {
-  try { const response = await fetch(`${portal}/api/bridge/status`, { headers: { Authorization: `Bearer ${process.env.ACIES_BRIDGE_SECRET}` }, signal: AbortSignal.timeout(20000) }); const data = await response.json(); const passed = response.ok && data.ready === true && data.intakeVersion === 2; if (!passed) ready = false; console.log(JSON.stringify({ check: "authenticated portal storage", status: response.status, ready: data.ready === true, ...(typeof data.code === "string" && /^[A-Z0-9_]{3,50}$/.test(data.code) ? { code: data.code } : {}), passed })); }
+  try { const response = await fetch(`${portal}/api/bridge/status`, { headers: { Authorization: `Bearer ${process.env.ACIES_BRIDGE_SECRET}` }, signal: AbortSignal.timeout(20000) }); const data = await response.json(); const passed = response.ok && data.ready === true && data.intakeVersion === 2; if (!passed) ready = false; console.log(JSON.stringify({ check: "authenticated portal storage", status: response.status, ready: data.ready === true, mediaStorage: data.mediaStorage, ...(typeof data.code === "string" && /^[A-Z0-9_]{3,50}$/.test(data.code) ? { code: data.code } : {}), passed })); }
   catch { ready = false; console.log(JSON.stringify({ check: "authenticated portal storage", passed: false })); }
 }
 if (!ready) process.exitCode = 1;
