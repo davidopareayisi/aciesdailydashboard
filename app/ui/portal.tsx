@@ -10,7 +10,7 @@ import { StaffApp } from "./staff-app";
 export function Portal() {
   const pathname = usePathname(), router = useRouter(), [user, setUser] = useState<SafeUser | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
   useEffect(() => { let active = true; api<{ user: SafeUser | null }>("auth/session").then((data) => { if (active) setUser(data.user); }).catch(() => { if (active) setError("We couldn't connect to the portal. Please refresh to try again."); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, []);
-  function onUser(user: SafeUser) { setUser(user); setError(""); router.push(!user.verifiedAt ? "/verify" : user.role === "staff" ? "/team" : user.role === "creative" ? "/home" : "/projects"); }
+  function onUser(user: SafeUser) { setUser(user); setError(""); router.push(!user.verifiedAt ? "/verify" : user.role === "staff" ? "/team" : user.role === "creative" ? (pathname === "/learn" || pathname.startsWith("/learn/") ? pathname : "/home") : "/projects"); }
   async function onLogout() { try { await api("auth/logout", "POST", {}); setUser(null); router.push("/login"); } catch (error) { setError((error as Error).message); } }
   if (pathname === "/privacy") return <PrivacyScreen />;
   if (loading) return <div className="opening"><Wordmark /><p role="status">Getting things together…</p></div>;
