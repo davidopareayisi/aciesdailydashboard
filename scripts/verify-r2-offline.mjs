@@ -21,7 +21,7 @@ test("private uploads, reads, health checks and cleanup use the expected S3 comm
   const storage = createR2Storage(r2Configuration(env), { async send(command, options) {
     calls.push(command);
     assert.ok(options.abortSignal instanceof AbortSignal);
-    return command instanceof GetObjectCommand ? { Body: { transformToByteArray: async () => bytes } } : {};
+    return command instanceof GetObjectCommand ? { Body: { async *[Symbol.asyncIterator]() { yield bytes; } } } : {};
   } });
   await storage.check();
   await storage.put("portal/offline-test.webp", bytes, "image/webp");
@@ -44,4 +44,15 @@ test("invalid object paths cannot trigger requests, and provider failures cannot
   await assert.rejects(storage.check(), { message: "Private file storage is unavailable.", code: "R2_REQUEST_FAILED" });
   const missingBody = createR2Storage(r2Configuration(env), { async send() { return {}; } });
   await assert.rejects(missingBody.get("portal/offline-test.webp"), { code: "R2_READ_FAILED" });
+});
+test("direct upload signatures bind type, length and checksum; reads are bounded", async () => {
+  const storage = createR2Storage(r2Configuration(env));
+  const upload = new URL(await storage.signUpload("pending/offline-test.bin", "image/png", 100, "a".repeat(43) + "="));
+  assert.equal(upload.searchParams.get("X-Amz-Expires"), "600");
+  const headers = upload.searchParams.get("X-Amz-SignedHeaders").split(";");
+  for (const name of ["content-length", "content-type", "x-amz-checksum-sha256"]) assert.ok(headers.includes(name));
+  const download = new URL(await storage.signDownload("portal/offline-test.mp4", "dailyacies", "video/mp4", "private.mp4"));
+  assert.equal(download.searchParams.get("X-Amz-Expires"), "900");
+  const bounded = createR2Storage(r2Configuration(env), { async send() { return { Body: { async *[Symbol.asyncIterator]() { yield Buffer.alloc(10); } } }; } });
+  await assert.rejects(bounded.get("pending/offline-test.bin", "dailyacies", 5), { code: "R2_READ_FAILED" });
 });

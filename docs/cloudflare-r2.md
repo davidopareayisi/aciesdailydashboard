@@ -12,7 +12,7 @@ In Vercel's `aciesdailydashboard` project, set these server-only Production vari
 - `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`: an R2 S3 token with Object Read & Write access restricted to this bucket. Use Secret variables. A general Cloudflare API token is not a substitute for this pair.
 - `ACIES_MEDIA_STORAGE=r2`: enable new uploads only after credentials and bucket privacy are verified. `database` preserves the existing upload destination.
 
-Keep the bucket private: disable its public development URL and do not attach a public custom domain to it. The application cannot guarantee private learning/project files if the bucket is independently exposed. Server-side S3 uploads do not require browser CORS rules. Do not publish tokens, private objects or credential files.
+Keep the bucket private: disable its public development URL and do not attach a public custom domain to it. The application cannot guarantee private learning/project files if the bucket is independently exposed. Browser uploads require the restricted CORS rule installed by `node scripts/configure-r2-direct.mjs`; the bucket remains private. Do not publish tokens, private objects or credential files.
 
 After updating variables, deploy the dashboard. The authenticated `/api/bridge/status` readiness check makes a read-only HeadBucket request when R2 is selected; failures return a sanitized R2 code. This proves connectivity/bucket access, not upload permissions. For a complete put/read/delete test, set the same private variables in an ignored local environment and run `npm run storage:verify -- --roundtrip`. The script creates and removes only its own randomly named `_acies-checks` object; it never lists or changes existing objects.
 
@@ -20,9 +20,13 @@ After updating variables, deploy the dashboard. The authenticated `/api/bridge/s
 
 Neon still holds accounts, projects and media metadata. New R2 objects use `portal/<random-id>.<extension>`. Metadata records their provider and bucket so existing Neon files continue to use their original reader. No existing bytes or URLs are migrated or removed. Preserve the existing bucket and account credentials if changing the default destination later.
 
-All downloads still pass through the portal's ownership, shared-deliverable and publication checks. An R2 object is fetched only after access is allowed. Practice images/videos remain private even if referenced by published content. Images still receive resizing and metadata stripping before storage.
+All downloads still pass through the portal's ownership, shared-deliverable and publication checks. After access is allowed, the portal redirects to a signed R2 download URL valid for 60 seconds (15 minutes for video playback). An issued link remains usable until it expires, including after consent withdrawal. Video range requests go directly to R2. Practice images/videos remain private even if referenced by published content. Images still receive resizing and metadata stripping before storage.
 
-The current 4 MB upload limit remains because files still pass through a Vercel Function. Connecting R2 does not itself bypass that request limit. Larger files require a separate authenticated direct-upload/finalization flow.
+Production browser uploads go directly to R2: images and project PDFs up to 10 MB; private learning MP4/WebM videos up to 100 MB. The dashboard issues a 10-minute PUT URL signed for exact size, MIME and SHA-256 checksum. Finalization rechecks ownership/project permission, size, checksum and file signatures; images are decoded, resized and stripped of metadata. Video checking identifies the container signature, not codec correctness or full content scanning. Only verified objects receive media records. Staging objects in `pending/` expire after one day; expired local metadata is cleaned in batches on subsequent uploads by that user. Legacy multipart uploads and non-R2 development environments retain the 4 MB limit. Failed uploads can be retried by selecting the file again.
+
+Apply `node scripts/migrate-direct-upload.mjs` before deploying to allow the pending-upload collection. Run `node scripts/configure-r2-direct.mjs` once for CORS and the staging lifecycle rule; it preserves other rules.
+
+Run `node scripts/verify-direct-upload.mjs` against the isolated R2 preview to verify the direct flow, size/type rejection, ownership and a synthetic upload larger than 10 MB. Never use production business accounts for this test.
 
 `npm run test:r2` runs offline transport/configuration tests without a real bucket. Isolated QA previews explicitly disable R2 credentials and select database/local storage so tests cannot write production objects.
 

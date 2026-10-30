@@ -1,7 +1,7 @@
 CREATE SCHEMA IF NOT EXISTS acies_portal;
 REVOKE ALL ON SCHEMA acies_portal FROM PUBLIC;
 CREATE TABLE IF NOT EXISTS acies_portal.records (
-  collection text NOT NULL CHECK (collection IN ('users','sessions','creativeProfiles','invitations','notices','messages','media','challenges','invites','audit','enquiries','profiles','work','packages','limits','lessons','learningProgress','learningSubmissions')),
+  collection text NOT NULL CHECK (collection IN ('users','sessions','creativeProfiles','invitations','notices','messages','media','challenges','invites','audit','enquiries','profiles','work','packages','limits','lessons','learningProgress','learningSubmissions','pendingUploads')),
   id text NOT NULL,
   data jsonb NOT NULL,
   revision integer NOT NULL DEFAULT 1,
@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS acies_portal.records (
 );
 -- Add learning collections to existing installations without changing stored records.
 ALTER TABLE acies_portal.records DROP CONSTRAINT IF EXISTS records_collection_check;
-ALTER TABLE acies_portal.records ADD CONSTRAINT records_collection_check CHECK (collection IN ('users','sessions','creativeProfiles','invitations','notices','messages','media','challenges','invites','audit','enquiries','profiles','work','packages','limits','lessons','learningProgress','learningSubmissions'));
+ALTER TABLE acies_portal.records ADD CONSTRAINT records_collection_check CHECK (collection IN ('users','sessions','creativeProfiles','invitations','notices','messages','media','challenges','invites','audit','enquiries','profiles','work','packages','limits','lessons','learningProgress','learningSubmissions','pendingUploads'));
 CREATE TABLE IF NOT EXISTS acies_portal.files (
   storage_key text PRIMARY KEY,
   bytes bytea NOT NULL,

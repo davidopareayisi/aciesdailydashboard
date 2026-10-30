@@ -3,7 +3,7 @@ import { learningAction, staffLearningAction } from "../../lib/learning-actions"
 import { authAction } from "../../lib/auth-actions";
 import { approveProject, contentEntries, userAction } from "../../lib/domain";
 import { staffAction } from "../../lib/staff-actions";
-import { download, upload } from "../../lib/media";
+import { directUpload, download, upload } from "../../lib/media";
 import { body, equal, HttpError, json } from "../../lib/security";
 import { get } from "../../lib/db";
 import { createEnquiry } from "../../lib/enquiry-intake";
@@ -20,7 +20,7 @@ async function handle(request: NextRequest, context: Context): Promise<Response>
     if (path[0] === "auth") return await authAction(request, path[1]);
     if (path[0] === "portal") return await userAction(request, path.slice(1));
     if (path[0] === "staff" || path[0] === "admin") return await staffAction(request, path.slice(1));
-    if (path[0] === "upload" && request.method === "POST") return await upload(request);
+    if (path[0] === "upload" && request.method === "POST") return path.length === 1 ? await upload(request) : await directUpload(request, path[1]);
     if (path[0] === "media" && request.method === "GET") return await download(request, path[1]);
     if (path[0] === "content" && request.method === "GET" && collections.includes(path[1] as Collection)) {
       const entries = (await contentEntries(path[1] as Collection, true)).map(({ userId: ignoredId, ...entry }) => { void ignoredId; return entry; }); return json({ entries });
@@ -39,3 +39,5 @@ async function handle(request: NextRequest, context: Context): Promise<Response>
 export const GET = handle;
 export const POST = handle;
 export const PATCH = handle;
+
+export const maxDuration = 120;
