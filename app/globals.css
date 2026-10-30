@@ -254,7 +254,8 @@ img { max-width:100%; }
 .staff-app .app-header { padding-inline:32px; }
 @media (min-width:761px) {
   .staff-app .app-header { position:sticky; top:0; z-index:50; }
-  .staff-sidebar { position:sticky; top:82px; align-self:start; height:calc(100dvh - 82px); overflow-y:auto; }
+  .staff-sidebar { position:sticky; top:82px; align-self:start; height:calc(100dvh - 82px); overflow-y:auto; scrollbar-width:none; }
+  .staff-sidebar::-webkit-scrollbar { display:none; }
 }
 .staff-layout { display:grid; grid-template-columns:230px minmax(0,1fr); min-height:calc(100dvh - 82px); }
 .staff-sidebar { border-right:1px solid var(--line); padding:40px 22px; }
