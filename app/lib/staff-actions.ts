@@ -108,7 +108,8 @@ export async function staffAction(request: NextRequest, path: string[]) {
   }
   if (action === "invite-account" && request.method === "POST") {
     const phone = normalizeContactPhone(text(data, "phone", 80, true)); if (!phone) throw new HttpError("Enter a valid phone number.");
-    const role = data.role === "staff" ? "staff" : "client"; if (role === "staff" && !actor.owner) throw new HttpError("Only the workspace owner can invite staff.", 403);
+    if (!["staff", "client", "writer", "editor"].includes(String(data.role))) throw new HttpError("Choose an account role.");
+    const role = data.role as Invite["role"]; if (role !== "client" && !actor.owner) throw new HttpError("Only the workspace owner can invite team members.", 403);
     const projectId = text(data, "projectId", 120); if (projectId && !(await get<Project>("enquiries", projectId))) throw new HttpError("Project not found.");
     const existing = await get<User>("users", userId(phone));
     if (existing) { if (existing.role !== role) throw new HttpError("This phone belongs to another account type. Use a different registered number."); if (role === "client" && projectId) await update<Project>("enquiries", projectId, (current) => ({ ...current, clientId: existing.id })); return json({ existing: true, url: `${process.env.ACIES_PORTAL_URL || request.nextUrl.origin}/login` }); }

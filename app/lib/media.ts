@@ -5,7 +5,9 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import type { NextRequest } from "next/server";
-import { create, dataRoot, find, get, remove, supabase } from "./db";
+import { publishedArticles } from "./editorial";
+import type { Article } from "./editorial-types";
+import { create, dataRoot, find, get, list, remove, supabase } from "./db";
 import { contentEntries, now } from "./domain";
 import { body, equal, HttpError, json, rateLimit, requireUser, sameOrigin, currentUser } from "./security";
 import type { Invitation, Media } from "./types";
@@ -40,6 +42,10 @@ export async function upload(request: NextRequest) {
 export async function download(request: NextRequest, id: string) {
   const media = await get<Media>("media", id); if (!media) throw new HttpError("File not found.", 404);
   const user = await currentUser(request); let allowed = user?.role === "staff" || user?.id === media.userId;
+  if (!allowed && !media.projectId && !media.purpose && media.mime.startsWith("image/")) {
+    allowed = (await publishedArticles()).some(a => a.imageId === id);
+    if (!allowed && user?.role === "editor") allowed = (await list<Article>("articles")).some(a => a.imageId === id);
+  }
   const projectId = request.headers.get("x-acies-project"), bearer = request.headers.get("authorization")?.replace(/^Bearer /, "") || "";
   if (!allowed && projectId && media.projectId === projectId && bearer.length >= 40 && bearer.length <= 100) { const project = await get<Project>("enquiries", projectId); allowed = Boolean(project?.accessToken && equal(bearer, project.accessToken) && project.deliverables?.some((item) => item.url.endsWith(`/api/media/${id}`))); }
   if (!allowed && media.projectId && user?.role === "client") { const project = await get<Project>("enquiries", media.projectId); allowed = project?.clientId === user.id && Boolean(project.deliverables?.some((item) => item.url.endsWith(`/api/media/${id}`))); }

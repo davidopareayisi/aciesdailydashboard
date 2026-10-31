@@ -1,0 +1,13 @@
+.editorial-workspace { max-width: 1080px; margin-inline: auto; padding-block: 64px; }
+.editorial-list { margin-top: 32px; }
+.editorial-list .summary-row { width: 100%; text-align: left; }
+.editorial-editor { max-width: 880px; }
+.editorial-editor fieldset { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 24px; }
+.editorial-editor textarea { line-height: 1.8; }
+.editorial-details { border-block: 1px solid var(--line, #deddd7); padding: 22px 0; }
+.editorial-details summary { cursor: pointer; font-weight: 600; }
+.editorial-details p, .editorial-details .field, .editorial-details .upload-control { margin-top: 20px; }
+.editorial-details p, .editorial-publishing p { line-height: 1.7; max-width: 65ch; }
+.editorial-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.editorial-publishing { display: grid; gap: 24px; padding-top: 32px; border-top: 1px solid #deddd7; }
+@media(max-width: 600px) { .editorial-workspace { padding: 32px 20px; } .editorial-actions .button { width: 100%; } }

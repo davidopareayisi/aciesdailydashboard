@@ -1,0 +1,1 @@
+export const brand = { name: "AciesDaily", studio: "https://daily.acies.store", media: process.env.NEXT_PUBLIC_ACIES_MEDIA_URL || "", dashboard: "https://apply.acies.store", phone: "+233547637997" } as const;

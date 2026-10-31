@@ -1,6 +1,7 @@
-export const business = { phone: "054 763 7997", internationalPhone: "+233547637997", name: "AciesDaily" };
+import { brand } from "./brand";
+export const business = { phone: "054 763 7997", internationalPhone: brand.phone, name: brand.name };
 
-export function whatsapp(message = "Hi AciesDaily, I'd like to discuss a production.", phone = business.internationalPhone) {
+export function whatsapp(message = "Hi AciesDaily, I'd like to discuss a production.", phone: string = business.internationalPhone) {
   return `https://wa.me/${phone.replace(/\D/g, "")}?text=${encodeURIComponent(message)}`;
 }
 

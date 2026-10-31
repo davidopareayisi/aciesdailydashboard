@@ -1,4 +1,4 @@
-export type Role = "creative" | "client" | "staff";
+export type Role = "creative" | "client" | "staff" | "writer" | "editor";
 export const crafts = ["Photographer", "Camera operator", "Model / actor", "Filmmaker", "Stylist", "Hair / makeup artist", "Lighting / sound crew", "Production crew", "Studio / location owner"];
 export type User = { id: string; name: string; phone: string; email: string; passwordHash: string; role: Role; owner?: boolean; demo?: boolean; verifiedAt: string; createdAt: string; authVersion: number; disabled?: boolean };
 export type SafeUser = Omit<User, "passwordHash" | "authVersion">;
@@ -9,5 +9,5 @@ export type Message = { id: string; threadId: string; userId: string; senderName
 export type Media = { id: string; userId: string; projectId: string; filename: string; mime: string; bytes: number; storageKey: string; createdAt: string; purpose?: "learning"; storageProvider?: "r2"; storageBucket?: string };
 export type Session = { id: string; userId: string; expiresAt: number; version: number };
 export type Challenge = { id: string; userId: string; purpose: "verify" | "reset"; hash: string; expiresAt: number; attempts: number; createdAt: number; consumed: boolean };
-export type Invite = { id: string; phone: string; role: "staff" | "client"; name: string; projectId: string; tokenHash: string; expiresAt: number; consumed: boolean; createdAt: string };
+export type Invite = { id: string; phone: string; role: "staff" | "client" | "writer" | "editor"; name: string; projectId: string; tokenHash: string; expiresAt: number; consumed: boolean; createdAt: string };
 export type Audit = { id: string; actorId: string; action: string; targetId: string; createdAt: string };

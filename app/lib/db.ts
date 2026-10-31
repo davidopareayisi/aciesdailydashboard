@@ -3,7 +3,7 @@ import { mkdir, readFile, readdir, rename, writeFile, unlink } from "node:fs/pro
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { postgresEnabled, postgresQuery, StorageConfigurationError } from "./postgres.mjs";
-export const buckets = ["users", "sessions", "creativeProfiles", "invitations", "notices", "messages", "media", "challenges", "invites", "audit", "enquiries", "profiles", "work", "packages", "limits", "lessons", "learningProgress", "learningSubmissions", "pendingUploads"] as const;
+export const buckets = ["users", "sessions", "creativeProfiles", "invitations", "notices", "messages", "media", "challenges", "invites", "audit", "enquiries", "profiles", "work", "packages", "limits", "lessons", "learningProgress", "learningSubmissions", "pendingUploads", "articles"] as const;
 export type Bucket = typeof buckets[number];
 type Row<T> = { data: T; revision: number };
 const queues = new Map<string, Promise<unknown>>();

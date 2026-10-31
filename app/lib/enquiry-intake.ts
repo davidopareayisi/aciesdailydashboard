@@ -27,7 +27,7 @@ function validate(data: Record<string, unknown>) {
   if (!phone) throw new HttpError("Please include a valid phone/WhatsApp number, such as 024 123 4567 or +233 24 123 4567.");
   fields.phone = phone;
   if (fields.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fields.email)) throw new HttpError("Please enter a valid email address or leave the optional email field blank.");
-  const services = Array.isArray(data.services) ? [...new Set(data.services.filter((value): value is string => typeof value === "string" && ["talent", "studios", "production"].includes(value)))].sort() : [];
+  const services = Array.isArray(data.services) ? [...new Set(data.services.filter((value): value is string => typeof value === "string" && ["talent", "studios", "production", "creative"].includes(value)))].sort() : [];
   if (data.kind === "project" && (!services.length || !fields.projectType || !fields.budget)) throw new HttpError("Please choose a service, project type and budget preference.");
   if (fields.date && (!/^\d{4}-\d{2}-\d{2}$/.test(fields.date) || Number.isNaN(Date.parse(fields.date)) || new Date(fields.date).toISOString().slice(0, 10) !== fields.date)) throw new HttpError("Please check the shoot date.");
   if (data.kind === "network") {

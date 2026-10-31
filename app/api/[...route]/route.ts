@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { editorialAction, publicEditorial } from "../../lib/editorial";
 import { learningAction, staffLearningAction } from "../../lib/learning-actions";
 import { authAction } from "../../lib/auth-actions";
 import { approveProject, contentEntries, userAction } from "../../lib/domain";
@@ -15,6 +16,8 @@ type Context = { params: Promise<{ route: string[] }> };
 async function handle(request: NextRequest, context: Context): Promise<Response> {
   try {
     const { route: path } = await context.params;
+    if (path[0] === "editorial") return await editorialAction(request, path.slice(1));
+    if (path.join("/") === "publication/articles") return await publicEditorial(request);
     if (path[0] === "learn") return await learningAction(request, path.slice(1));
     if (path[0] === "staff" && path[1] === "learn") return await staffLearningAction(request, path.slice(2));
     if (path[0] === "auth") return await authAction(request, path[1]);
